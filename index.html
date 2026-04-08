@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeCoding — App Ideas</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/sidebar.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+
+<!-- ─── HEADER ──────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="logo">
+    <span class="logo-local">Local &rsaquo;</span>
+    <span>Vibe<span class="logo-accent">Coding</span></span>
+  </div>
+  <div class="logo-sub">App <span class="logo-sub-accent">Ideas</span></div>
+  <div class="header-spacer"></div>
+  <button class="header-btn" onclick="backupData()" title="Download a backup of all data">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/></svg>
+    Backup
+  </button>
+  <button class="header-btn" onclick="document.getElementById('restore-input').click()" title="Restore from a backup file">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5z"/></svg>
+    Restore
+  </button>
+  <input type="file" id="restore-input" accept=".json" style="display:none">
+</header>
+
+<!-- ─── APP LAYOUT ──────────────────────────────────────────────────────── -->
+<div class="app-layout">
+
+  <!-- LEFT: Sidebar — Categories & Ideas -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">App Categories</span>
+    </div>
+    <div class="sidebar-tree" id="sidebar-tree">
+      <!-- rendered by sidebar.js -->
+    </div>
+  </aside>
+
+  <!-- DIVIDER -->
+  <div class="resize-handle" id="resize-handle" title="Drag to resize"></div>
+
+  <!-- RIGHT: Page Editor -->
+  <main class="editor-panel" id="editor-panel">
+    <!-- rendered by editor.js -->
+  </main>
+
+</div>
+
+<!-- ─── MODAL: Add Category ──────────────────────────────────────────────── -->
+<div class="overlay" id="add-category-modal" onclick="overlayClick(event,'add-category-modal')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hdr">
+      <div class="modal-title">Add Category</div>
+      <button class="close-btn" onclick="closeModal('add-category-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="add-cat-name" class="form-input"
+               placeholder="e.g. Desktop Apps, Chrome Extensions…"
+               onkeydown="if(event.key==='Enter')confirmAddCategory()">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('add-category-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmAddCategory()">Add Category</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Rename Category ───────────────────────────────────────────── -->
+<div class="overlay" id="rename-category-modal" onclick="overlayClick(event,'rename-category-modal')">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-hdr">
+      <div class="modal-title">Rename Category</div>
+      <button class="close-btn" onclick="closeModal('rename-category-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="rename-cat-name" class="form-input"
+               onkeydown="if(event.key==='Enter')confirmRenameCategory()">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('rename-category-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmRenameCategory()">Rename</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Delete Category ───────────────────────────────────────────── -->
+<div class="overlay" id="delete-category-modal" onclick="overlayClick(event,'delete-category-modal')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hdr">
+      <div class="modal-title">Delete Category</div>
+      <button class="close-btn" onclick="closeModal('delete-category-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-desc">
+        Permanently delete <strong id="del-cat-name"></strong><span id="del-cat-count"></span>?
+        This cannot be undone.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('delete-category-modal')">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmDeleteCategory()">Delete Forever</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Add Idea ───────────────────────────────────────────────────── -->
+<div class="overlay" id="add-idea-modal" onclick="overlayClick(event,'add-idea-modal')">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">New App Idea</div>
+        <div class="modal-sub">in <strong id="add-idea-cat"></strong></div>
+      </div>
+      <button class="close-btn" onclick="closeModal('add-idea-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Idea Title</label>
+        <input type="text" id="add-idea-title" class="form-input"
+               placeholder="e.g. Recipe Manager Pro, AI Code Reviewer…"
+               onkeydown="if(event.key==='Enter')confirmAddIdea()">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('add-idea-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmAddIdea()">Create Idea</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Rename Idea ───────────────────────────────────────────────── -->
+<div class="overlay" id="rename-idea-modal" onclick="overlayClick(event,'rename-idea-modal')">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-hdr">
+      <div class="modal-title">Rename Idea</div>
+      <button class="close-btn" onclick="closeModal('rename-idea-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Idea Title</label>
+        <input type="text" id="rename-idea-title" class="form-input"
+               onkeydown="if(event.key==='Enter')confirmRenameIdea()">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('rename-idea-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmRenameIdea()">Rename</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Delete Idea ───────────────────────────────────────────────── -->
+<div class="overlay" id="delete-idea-modal" onclick="overlayClick(event,'delete-idea-modal')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hdr">
+      <div class="modal-title">Delete App Idea</div>
+      <button class="close-btn" onclick="closeModal('delete-idea-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-desc">
+        Permanently delete <strong id="del-idea-name"></strong><span id="del-idea-versions"></span>?
+        This cannot be undone.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('delete-idea-modal')">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmDeleteIdea()">Delete Forever</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Save Version ──────────────────────────────────────────────── -->
+<div class="overlay" id="save-version-modal" onclick="overlayClick(event,'save-version-modal')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">Save Version</div>
+        <div class="modal-sub">Creates a permanent snapshot of this idea</div>
+      </div>
+      <button class="close-btn" onclick="closeModal('save-version-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Version Label <span class="label-opt">(optional)</span></label>
+        <input type="text" id="version-label" class="form-input"
+               placeholder="e.g. Initial concept, MVP plan, Revised scope…"
+               onkeydown="if(event.key==='Enter')confirmSaveVersion()">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('save-version-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmSaveVersion()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+          Save Version
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Delete Version ────────────────────────────────────────────── -->
+<div class="overlay" id="delete-version-modal" onclick="overlayClick(event,'delete-version-modal')">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-hdr">
+      <div class="modal-title">Delete Version</div>
+      <button class="close-btn" onclick="closeModal('delete-version-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-desc">Delete <strong id="del-ver-label"></strong>? This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('delete-version-modal')">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmDeleteVersion()">Delete Version</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TOAST ───────────────────────────────────────────────────────────── -->
+<div id="toast" class="toast"></div>
+
+<!-- ─── BLOCK CONTROLS (hover + / ⠿ per line) ───────────────────────────── -->
+<!-- ─── SLASH COMMAND MENU ────────────────────────────────────────────────── -->
+<div id="slash-menu" class="slash-menu" style="display:none">
+  <div id="slash-items" class="slash-items"></div>
+</div>
+
+<!-- ─── COLOR MENU ───────────────────────────────────────────────────────── -->
+<div id="color-menu" class="color-menu" style="display:none"></div>
+
+<!-- ─── FLOATING INLINE TOOLBAR ──────────────────────────────────────────── -->
+<div id="float-toolbar" class="float-toolbar" style="display:none">
+  <button class="ft-btn" title="Turn into…" onclick="openBlockMenu()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+  </button>
+  <div class="ft-sep"></div>
+  <button class="ft-btn" title="Bold" onclick="floatFmt('bold')"><b>B</b></button>
+  <button class="ft-btn" title="Italic" onclick="floatFmt('italic')"><i>I</i></button>
+  <button class="ft-btn" title="Underline" onclick="floatFmt('underline')"><u>U</u></button>
+  <button class="ft-btn" title="Strikethrough" onclick="floatFmt('strikeThrough')"><s>S</s></button>
+  <div class="ft-sep"></div>
+  <button class="ft-btn ft-code" title="Inline code" onclick="floatFmtCode()"><span>&lt;/&gt;</span></button>
+  <button class="ft-btn" title="Link" onclick="floatFmtLink()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+  </button>
+  <div class="ft-sep"></div>
+  <button class="ft-btn" title="Text & background color" onclick="openColorMenu(event)" id="ft-color-btn">
+    <span style="font-weight:700;font-size:13px;border-bottom:3px solid #d4d4d4;line-height:1;padding-bottom:1px" id="ft-color-indicator">A</span>
+  </button>
+</div>
+
+<!-- ─── SCRIPTS ─────────────────────────────────────────────────────────── -->
+<script src="js/app.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/sidebar.js"></script>
+<script src="js/editor.js"></script>
+
+</body>
+</html>
