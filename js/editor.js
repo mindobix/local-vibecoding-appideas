@@ -320,8 +320,25 @@ function handleEditorPaste(e) {
   e.preventDefault();
 
   const clipData = e.clipboardData || window.clipboardData;
-  const html     = clipData.getData('text/html');
-  const text     = clipData.getData('text/plain');
+
+  // Check for image items first
+  const imageItem = [...(clipData.items || [])].find(item => item.type.startsWith('image/'));
+  if (imageItem) {
+    const file = imageItem.getAsFile();
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = `<img src="${ev.target.result}" style="max-width:100%;border-radius:4px;display:block;margin:4px 0" alt="pasted image">`;
+        document.execCommand('insertHTML', false, img);
+        onEditorInput();
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+  }
+
+  const html = clipData.getData('text/html');
+  const text = clipData.getData('text/plain');
 
   if (html && html.trim()) {
     const cleaned = cleanPastedHtml(html);
