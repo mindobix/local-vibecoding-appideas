@@ -8,7 +8,7 @@ Built for vibe coders who generate ideas faster than they can ship them — a No
 
 ## Why This Exists
 
-You're in the zone. An app idea hits. You need somewhere to capture it *right now* — not a Notion workspace that needs loading, not a Notes app with no structure, not a Google Doc you'll never find again.
+You're in the zone. An app idea hits. You need somewhere to capture it _right now_ — not a Notion workspace that needs loading, not a Notes app with no structure, not a Google Doc you'll never find again.
 
 VibeCoding App Ideas is a single HTML file. Open it. Start writing. Close the tab. It's still there next time.
 
@@ -17,6 +17,7 @@ VibeCoding App Ideas is a single HTML file. Open it. Start writing. Close the ta
 ## Features
 
 ### Idea Organization
+
 - **5 built-in categories** — AI Apps, Android Apps, iOS Apps, Web Apps, Web Services (alphabetical, opinionated)
 - **Add your own categories** — name them anything, reorganize as your portfolio grows
 - **Drag ideas between categories** — changed your mind? Drop it where it belongs
@@ -24,6 +25,7 @@ VibeCoding App Ideas is a single HTML file. Open it. Start writing. Close the ta
 - **GitHub repo link** — attach the repo URL to each idea once it's alive
 
 ### Writing Experience
+
 - **Notion-style centered editor** — clean, distraction-free, focused on the words
 - **Rich text formatting** — Bold, Italic, Underline, Strikethrough, Inline code, Hyperlinks
 - **Block types** — Text, Heading 1, Heading 2, Heading 3, Bulleted list, Numbered list, Quote, Code block, Divider
@@ -33,12 +35,14 @@ VibeCoding App Ideas is a single HTML file. Open it. Start writing. Close the ta
 - **Auto-save** — drafts save to localStorage 600ms after you stop typing. No save button needed.
 
 ### Version History
+
 - **Save named versions** — snapshot any idea at any point: `Initial concept`, `MVP plan`, `Revised scope`
 - **Browse past versions** — version tabs at the bottom, click to view any snapshot
 - **Restore** — bring any version back as your current draft in one click
 - **Delete versions** — clean up snapshots you no longer need
 
 ### Data & Privacy
+
 - **100% offline** — no server, no API, no account. Works with no internet connection.
 - **localStorage** — all data lives in your browser, private by default
 - **Backup** — download a full JSON backup of all categories, ideas, versions, and drafts
@@ -68,12 +72,12 @@ That's it. No install. No build step. No npm. No account.
 
 ## Keyboard Shortcuts
 
-| Action | Shortcut |
-|---|---|
+| Action       | Shortcut        |
+| ------------ | --------------- |
 | Save version | `⌘S` / `Ctrl+S` |
-| Bold | `⌘B` / `Ctrl+B` |
-| Italic | `⌘I` / `Ctrl+I` |
-| Underline | `⌘U` / `Ctrl+U` |
+| Bold         | `⌘B` / `Ctrl+B` |
+| Italic       | `⌘I` / `Ctrl+I` |
+| Underline    | `⌘U` / `Ctrl+U` |
 
 ---
 
@@ -82,6 +86,7 @@ That's it. No install. No build step. No npm. No account.
 Vanilla HTML, CSS, JavaScript. Zero dependencies. Zero frameworks. Zero build tools.
 
 The whole app is four files:
+
 - `index.html` — structure + modals
 - `css/styles.css` — dark theme, layout, shared components
 - `css/sidebar.css` — category & idea tree
@@ -96,5 +101,3 @@ The whole app is four files:
 ## Part of Local › LaunchPad
 
 This app is part of a collection of offline-first browser tools built for people who don't want to pay $20/month to think.
-
-[← Back to LaunchPad](../README.md)
