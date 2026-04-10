@@ -637,7 +637,7 @@ function vbCardDragStart(event, cardId) {
   }, 0);
 }
 
-function vbCardDragEnd(event) {
+function vbCardDragEnd(_event) {
   if (_vbDragCardId) {
     const el = document.getElementById(`vb-card-${_vbDragCardId}`);
     if (el) el.classList.remove('dragging');
@@ -760,15 +760,29 @@ function _vbCopyCardToClipboard(cardId) {
 
   navigator.clipboard.writeText(textToCopy).then(() => {
     const cardEl = document.getElementById(`vb-card-${cardId}`);
-    const pill   = cardEl?.querySelector('.vb-card-cat-sel');
-    if (!pill) return;
-    const original     = pill.innerHTML;
-    const originalColor = pill.style.color;
-    pill.innerHTML     = `<span class="vb-copy-nudge-pill">copied to clipboard</span>`;
-    if (catColor) pill.style.color = catColor;
+    if (!cardEl) return;
+
+    // Remove any existing train on this card
+    cardEl.querySelector('.vb-copy-train')?.remove();
+
+    const train = document.createElement('span');
+    train.className = 'vb-copy-train';
+    train.textContent = 'copied to clipboard';
+    if (catColor) {
+      train.style.borderColor = catColor + '66';
+      train.style.color = catColor;
+    }
+    cardEl.appendChild(train);
+
+    // Slide in (next frame so transition fires)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => train.classList.add('vb-copy-train--in'));
+    });
+
+    // Slide back out after 1.8s, then remove
     setTimeout(() => {
-      pill.innerHTML   = original;
-      pill.style.color = originalColor;
+      train.classList.remove('vb-copy-train--in');
+      train.addEventListener('transitionend', () => train.remove(), { once: true });
     }, 1800);
   }).catch(() => {/* silent — clipboard denied */});
 }
@@ -857,7 +871,7 @@ function vbOpenCardModal(cardId) {
   const cats     = APP.state.vibeBoard.promptCategories;
   const cat      = cats.find(c => c.id === card.categoryId);
   const catColor = cat ? cat.color : null;
-  const cols     = APP.state.vibeBoard.columns;
+
 
   // Category selector for modal header
   const catSelHtml = cat ? `
@@ -889,6 +903,13 @@ function vbOpenCardModal(cardId) {
           ${catSelHtml}
         </div>
         <div class="vb-card-modal-header-right">
+          <button class="vb-modal-action-btn"
+                  onclick="vbModalExportZip('${escapeAttr(cardId)}')" title="Export card + attachments as ZIP">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.54 15.5.05 12.45.05 10.26.05 8.39 1.3 7.42 3.09L7 4H4c-2.21 0-4 1.79-4 4v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3v3.5l-3 3-3-3V9h2v3l1 1 1-1V9h2z"/>
+            </svg>
+            Export ZIP
+          </button>
           <button class="vb-modal-action-btn"
                   id="vb-modal-copy-btn"
                   onclick="vbModalCopy('${escapeAttr(cardId)}')" title="Copy to clipboard">
@@ -1080,8 +1101,7 @@ function vbModalMovePicker(event, cardId) {
 }
 
 // ─── Modal: Copy ───────────────────────────────────────────────────────────────
-function vbModalCopy(cardId) {
-  const overlay  = document.getElementById('vb-card-modal-overlay');
+function vbModalCopy(_cardId) {
   const editorEl = document.getElementById('vb-card-modal-editor');
   const text     = editorEl ? editorEl.innerText.trim() : '';
   if (!text) return;
@@ -1266,4 +1286,150 @@ function vbAttView(attId, cardId) {
     a.click();
     document.body.removeChild(a);
   }
+}
+
+// ─── Card Modal: Export ZIP ────────────────────────────────────────────────────
+
+function vbModalExportZip(cardId) {
+  const ideaId = _boardIdeaId();
+  const card   = APP.state.ideas[ideaId]?.vibeCards?.find(c => c.id === cardId);
+  if (!card) return;
+
+  const enc = new TextEncoder();
+
+  // Build plain-text version of card content
+  const plainText = card.draft
+    ? card.draft
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n').replace(/<\/h[1-6]>/gi, '\n')
+        .replace(/<\/li>/gi, '\n').replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/\n{3,}/g, '\n\n').trim()
+    : (card.text || '').trim();
+
+  const files = [
+    { name: 'card.txt', data: enc.encode(plainText) },
+  ];
+
+  (card.attachments || []).forEach(att => {
+    files.push({ name: att.name, data: _dataUrlToBytes(att.dataUrl) });
+  });
+
+  const zipBytes = _buildZip(files);
+  const slug     = (plainText.slice(0, 30).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()) || 'card';
+  const filename = `vibecard-${slug}.zip`;
+
+  const blob = new Blob([zipBytes], { type: 'application/zip' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${files.length} file${files.length > 1 ? 's' : ''} as ${filename}`);
+}
+
+// ─── ZIP builder (no dependencies) ────────────────────────────────────────────
+
+function _dataUrlToBytes(dataUrl) {
+  const b64    = dataUrl.split(',')[1] || '';
+  const binary = atob(b64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function _crc32(data) {
+  // Build table on first call
+  if (!_crc32._tbl) {
+    _crc32._tbl = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crc32._tbl[i] = c;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) crc = _crc32._tbl[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function _buildZip(files) {
+  const enc         = new TextEncoder();
+  const localParts  = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const name = enc.encode(file.name);
+    const data = file.data instanceof Uint8Array ? file.data : enc.encode(file.data);
+    const crc  = _crc32(data);
+    const size = data.length;
+
+    // Local file header (30 bytes) + name + data
+    const lh = new Uint8Array(30 + name.length + size);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0,  0x04034b50, true); // signature
+    lv.setUint16(4,  20,         true); // version needed
+    lv.setUint16(6,  0,          true); // flags
+    lv.setUint16(8,  0,          true); // compression (stored)
+    lv.setUint16(10, 0,          true); // mod time
+    lv.setUint16(12, 0,          true); // mod date
+    lv.setUint32(14, crc,        true); // CRC-32
+    lv.setUint32(18, size,       true); // compressed size
+    lv.setUint32(22, size,       true); // uncompressed size
+    lv.setUint16(26, name.length,true); // filename length
+    lv.setUint16(28, 0,          true); // extra length
+    lh.set(name, 30);
+    lh.set(data, 30 + name.length);
+    localParts.push(lh);
+
+    // Central directory header (46 bytes) + name
+    const ch = new Uint8Array(46 + name.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0,  0x02014b50, true);
+    cv.setUint16(4,  20,         true); // version made by
+    cv.setUint16(6,  20,         true); // version needed
+    cv.setUint16(8,  0,          true);
+    cv.setUint16(10, 0,          true);
+    cv.setUint16(12, 0,          true);
+    cv.setUint16(14, 0,          true);
+    cv.setUint32(16, crc,        true);
+    cv.setUint32(20, size,       true);
+    cv.setUint32(24, size,       true);
+    cv.setUint16(28, name.length,true);
+    cv.setUint16(30, 0,          true); // extra length
+    cv.setUint16(32, 0,          true); // comment length
+    cv.setUint16(34, 0,          true); // disk number start
+    cv.setUint16(36, 0,          true); // internal attrs
+    cv.setUint32(38, 0,          true); // external attrs
+    cv.setUint32(42, offset,     true); // local header offset
+    ch.set(name, 46);
+    centralParts.push(ch);
+
+    offset += lh.length;
+  }
+
+  const cdSize  = centralParts.reduce((s, p) => s + p.length, 0);
+  const eocdr   = new Uint8Array(22);
+  const ev      = new DataView(eocdr.buffer);
+  ev.setUint32(0,  0x06054b50,    true);
+  ev.setUint16(4,  0,             true);
+  ev.setUint16(6,  0,             true);
+  ev.setUint16(8,  files.length,  true);
+  ev.setUint16(10, files.length,  true);
+  ev.setUint32(12, cdSize,        true);
+  ev.setUint32(16, offset,        true);
+  ev.setUint16(20, 0,             true);
+
+  const total  = offset + cdSize + eocdr.length;
+  const result = new Uint8Array(total);
+  let pos = 0;
+  for (const p of localParts)   { result.set(p, pos); pos += p.length; }
+  for (const p of centralParts) { result.set(p, pos); pos += p.length; }
+  result.set(eocdr, pos);
+  return result;
 }

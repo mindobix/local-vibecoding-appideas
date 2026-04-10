@@ -64,6 +64,15 @@ When you drag a card from one column to another, the card's full text is silentl
 - Handles both plain inline text and rich editor content (HTML stripped to clean text)
 - Confirmation fades out automatically after 1.8 seconds
 
+#### Export Card as ZIP
+
+Every card editor dialog has an **Export ZIP** button in the header. One tap packages the card's full text content and all its attachments into a single `.zip` file and downloads it instantly — no server required.
+
+- Card text is saved as `card.txt` (rich editor content is stripped to clean plain text)
+- All attachments are included at their original filenames
+- The ZIP filename is auto-generated from the first 30 characters of the card text
+- Works entirely in-browser using a zero-dependency ZIP builder
+
 #### Card Attachments
 
 - **Up to 4 attachments per card** — images, PDFs, text files, Markdown, JSON, CSV
