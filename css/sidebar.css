@@ -198,6 +198,25 @@
   background: rgba(167,139,250,0.08);
 }
 
+.sidebar-pending-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 10px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.sidebar-idea.selected .sidebar-pending-badge {
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.4);
+  background: rgba(251,191,36,0.12);
+}
+
 .sidebar-idea-actions {
   display: flex;
   align-items: center;
