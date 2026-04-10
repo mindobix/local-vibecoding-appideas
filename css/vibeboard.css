@@ -505,8 +505,9 @@
   margin-top: 7px;
 }
 
-/* Move/delete/expand fade in on hover; copy + badge always visible */
+/* Move/dup/delete/expand fade in on hover; copy + badge always visible */
 .vb-card-actions .vb-card-move-btn,
+.vb-card-actions .vb-card-dup-btn,
 .vb-card-actions .vb-card-del-btn,
 .vb-card-actions .vb-card-expand-btn {
   opacity: 0;
@@ -514,9 +515,11 @@
               border-color var(--transition), background var(--transition);
 }
 .vb-card:hover .vb-card-actions .vb-card-move-btn,
+.vb-card:hover .vb-card-actions .vb-card-dup-btn,
 .vb-card:hover .vb-card-actions .vb-card-del-btn,
 .vb-card:hover .vb-card-actions .vb-card-expand-btn,
 .vb-card:focus-within .vb-card-actions .vb-card-move-btn,
+.vb-card:focus-within .vb-card-actions .vb-card-dup-btn,
 .vb-card:focus-within .vb-card-actions .vb-card-del-btn,
 .vb-card:focus-within .vb-card-actions .vb-card-expand-btn { opacity: 1; }
 
@@ -544,6 +547,7 @@
 
 .vb-card-copy-btn,
 .vb-card-move-btn,
+.vb-card-dup-btn,
 .vb-card-del-btn {
   display: inline-flex;
   align-items: center;
@@ -560,7 +564,8 @@
   transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 .vb-card-copy-btn:hover,
-.vb-card-move-btn:hover {
+.vb-card-move-btn:hover,
+.vb-card-dup-btn:hover {
   color: var(--text);
   border-color: var(--border-3);
   background: var(--surface-3);

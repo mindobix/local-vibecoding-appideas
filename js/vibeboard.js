@@ -313,6 +313,13 @@ function _renderCard(card, cats, currentColId) {
           </svg>
           Move
         </button>
+        <button class="vb-card-dup-btn"
+                onclick="vbDuplicateCard('${escapeAttr(card.id)}')"
+                title="Duplicate card">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+          </svg>
+        </button>
         <button class="vb-card-del-btn"
                 onclick="vbDeleteCard('${escapeAttr(card.id)}')"
                 title="Delete card">
@@ -372,6 +379,7 @@ function vbAddCard(colId, ideaId) {
   saveAppState();
 
   _refreshColumn(colId, ideaId);
+  renderSidebar();
 
   // Focus the new card's text area
   requestAnimationFrame(() => {
@@ -448,6 +456,41 @@ function vbDeleteCard(cardId) {
   saveAppState();
 
   _refreshColumn(colId, ideaId);
+  renderSidebar();
+}
+
+// ─── Card: Duplicate ──────────────────────────────────────────────────────────
+function vbDuplicateCard(cardId) {
+  const ideaId = _boardIdeaId();
+  if (!ideaId) return;
+
+  const idea = APP.state.ideas[ideaId];
+  const src  = idea?.vibeCards?.find(c => c.id === cardId);
+  if (!src) return;
+
+  // Deep-clone the card, give it a new id, place it immediately after the source
+  const colCards = idea.vibeCards
+    .filter(c => c.columnId === src.columnId)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const srcIdx = colCards.findIndex(c => c.id === cardId);
+
+  const dupe = {
+    ...src,
+    id:          generateId(),
+    createdAt:   Date.now(),
+    attachments: (src.attachments || []).map(a => ({ ...a })),
+  };
+
+  // Shift order of all cards after the source to make room
+  colCards.forEach(c => { if ((c.order || 0) > (src.order || 0)) c.order++; });
+  dupe.order = (src.order || 0) + 1;
+
+  idea.vibeCards.splice(idea.vibeCards.indexOf(src) + 1, 0, dupe);
+  saveAppState();
+
+  _refreshColumn(src.columnId, ideaId);
+  renderSidebar();
 }
 
 // ─── Card: Move ────────────────────────────────────────────────────────────────
@@ -468,6 +511,7 @@ function vbMoveCard(cardId, newColId) {
 
   _refreshColumn(oldColId, ideaId);
   _refreshColumn(newColId, ideaId);
+  renderSidebar();
 }
 
 // ─── Card: Set Category ────────────────────────────────────────────────────────
@@ -709,7 +753,10 @@ function vbCardDrop(event, targetCardId, colId) {
   _vbDragCardId = null;
 
   _refreshColumn(colId, ideaId);
-  if (oldColId !== colId) _refreshColumn(oldColId, ideaId);
+  if (oldColId !== colId) {
+    _refreshColumn(oldColId, ideaId);
+    renderSidebar();
+  }
 
   _vbCopyCardToClipboard(movedId);
 }
@@ -903,6 +950,13 @@ function vbOpenCardModal(cardId) {
           ${catSelHtml}
         </div>
         <div class="vb-card-modal-header-right">
+          <button class="vb-modal-action-btn"
+                  onclick="vbModalExportPdf('${escapeAttr(cardId)}')" title="Export card as PDF">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/>
+            </svg>
+            Export PDF
+          </button>
           <button class="vb-modal-action-btn"
                   onclick="vbModalExportZip('${escapeAttr(cardId)}')" title="Export card + attachments as ZIP">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -1286,6 +1340,146 @@ function vbAttView(attId, cardId) {
     a.click();
     document.body.removeChild(a);
   }
+}
+
+// ─── Card Modal: Export PDF ────────────────────────────────────────────────────
+
+function vbModalExportPdf(cardId) {
+  const ideaId = _boardIdeaId();
+  const card   = APP.state.ideas[ideaId]?.vibeCards?.find(c => c.id === cardId);
+  if (!card) return;
+
+  const cats     = APP.state.vibeBoard?.promptCategories || [];
+  const cat      = cats.find(c => c.id === card.categoryId);
+  const catName  = cat ? escapeHtml(cat.name)  : '';
+  const catColor = cat ? cat.color : '#888';
+
+  // Rich content: prefer draft HTML, fall back to plain text
+  const bodyHtml = card.draft
+    ? card.draft
+    : `<p>${escapeHtml(card.text || '')}</p>`;
+
+  // Image attachments to inline below the text
+  const imageAtts = (card.attachments || []).filter(a => a.type && a.type.startsWith('image/'));
+  const imagesHtml = imageAtts.map(a => `
+    <figure>
+      <img src="${a.dataUrl}" alt="${escapeHtml(a.name)}">
+      <figcaption>${escapeHtml(a.name)}</figcaption>
+    </figure>`).join('');
+
+  const title = (card.text || card.draft || 'VibeCard')
+    .replace(/<[^>]*>/g, '').slice(0, 60).trim() || 'VibeCard';
+
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { showToast('Allow pop-ups to export PDF', 'error'); return; }
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #1a1a1a;
+      background: #fff;
+      padding: 48px 56px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid ${catColor};
+    }
+    .cat-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid ${catColor}55;
+      color: ${catColor};
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .cat-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: ${catColor};
+      flex-shrink: 0;
+    }
+    .app-label {
+      margin-left: auto;
+      font-size: 11px;
+      color: #999;
+    }
+    .content { margin-bottom: 32px; }
+    .content p  { margin: 0 0 0.75em; }
+    .content h1, .content h2, .content h3 {
+      font-weight: 700; margin: 1.2em 0 0.4em;
+    }
+    .content h1 { font-size: 1.5em; }
+    .content h2 { font-size: 1.25em; }
+    .content h3 { font-size: 1.1em; }
+    .content ul, .content ol { padding-left: 1.4em; margin: 0.5em 0; }
+    .content li { margin: 0.2em 0; }
+    .content code {
+      background: #f3f4f6;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.88em;
+    }
+    .content pre {
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85em;
+      margin: 0.75em 0;
+    }
+    .content blockquote {
+      border-left: 3px solid ${catColor};
+      padding-left: 14px;
+      color: #555;
+      margin: 0.75em 0;
+    }
+    .images { display: flex; flex-wrap: wrap; gap: 16px; }
+    figure { margin: 0; max-width: 340px; }
+    figure img { max-width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; display: block; }
+    figcaption { font-size: 11px; color: #888; margin-top: 4px; }
+    @media print {
+      body { padding: 0; }
+      @page { margin: 2cm; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    ${catName ? `<span class="cat-pill"><span class="cat-dot"></span>${catName}</span>` : ''}
+    <span class="app-label">VibeCard</span>
+  </header>
+  <div class="content">${bodyHtml}</div>
+  ${imagesHtml ? `<div class="images">${imagesHtml}</div>` : ''}
+  <script>
+    window.onload = function() {
+      window.print();
+      window.onafterprint = function() { window.close(); };
+    };
+  <\/script>
+</body>
+</html>`);
+  win.document.close();
 }
 
 // ─── Card Modal: Export ZIP ────────────────────────────────────────────────────

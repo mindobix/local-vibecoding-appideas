@@ -130,7 +130,10 @@ function buildCategoryEl(category) {
 
 function buildIdeaEl(id, idea) {
   const isSelected = APP.ui.selectedIdea === id;
-  const vCount     = Array.isArray(idea.versions) ? idea.versions.length : 0;
+  const firstColId = APP.state.vibeBoard?.columns?.[0]?.id;
+  const pending    = firstColId
+    ? (idea.vibeCards || []).filter(c => c.columnId === firstColId).length
+    : 0;
 
   const statusDots = {
     'idea':        '#888',
@@ -153,7 +156,7 @@ function buildIdeaEl(id, idea) {
     </span>
     <span class="sidebar-idea-dot" style="background:${dotColor}; box-shadow: 0 0 4px ${dotColor}44"></span>
     <span class="sidebar-idea-name">${escapeHtml(idea.title)}</span>
-    ${vCount > 0 ? `<span class="sidebar-version-badge">v${vCount}</span>` : ''}
+    ${pending > 0 ? `<span class="sidebar-pending-badge" title="${pending} prompt${pending !== 1 ? 's' : ''} pending in queue">${pending}</span>` : ''}
     <div class="sidebar-idea-actions">
       <button class="sidebar-icon-btn sidebar-icon-btn--detail" title="App Idea Detail"
         onclick="selectIdeaEditor('${escapeAttr(id)}'); event.stopPropagation()">
