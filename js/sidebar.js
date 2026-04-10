@@ -155,6 +155,10 @@ function buildIdeaEl(id, idea) {
     <span class="sidebar-idea-name">${escapeHtml(idea.title)}</span>
     ${vCount > 0 ? `<span class="sidebar-version-badge">v${vCount}</span>` : ''}
     <div class="sidebar-idea-actions">
+      <button class="sidebar-icon-btn sidebar-icon-btn--detail" title="App Idea Detail"
+        onclick="selectIdeaEditor('${escapeAttr(id)}'); event.stopPropagation()">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+      </button>
       <button class="sidebar-icon-btn" title="Rename"
         onclick="openRenameIdeaModal('${escapeAttr(id)}'); event.stopPropagation()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
@@ -217,11 +221,19 @@ function toggleCategory(cat) {
   renderSidebar();
 }
 
+// Default tap → VibeBoard
 function selectIdea(id) {
-  if (APP.ui.isDirty) {
-    // Auto-save draft before switching
-    flushDraft();
-  }
+  if (APP.ui.isDirty) flushDraft();
+  APP.ui.selectedIdea    = id;
+  APP.ui.selectedVersion = null;
+  APP.ui.isDirty         = false;
+  renderSidebar();
+  renderVibeBoard(id);
+}
+
+// Doc icon → App Idea Detail (editor)
+function selectIdeaEditor(id) {
+  if (APP.ui.isDirty) flushDraft();
   APP.ui.selectedIdea    = id;
   APP.ui.selectedVersion = null;
   APP.ui.isDirty         = false;

@@ -235,6 +235,12 @@
   background: rgba(239,68,68,0.08);
 }
 
+.sidebar-icon-btn--detail:hover {
+  color: #a78bfa;
+  border-color: rgba(167,139,250,0.3);
+  background: rgba(167,139,250,0.08);
+}
+
 /* ─── Drag Handle ────────────────────────────────────────────────────────── */
 .sidebar-drag-handle {
   display: flex;

@@ -54,7 +54,7 @@ function renderEditor() {
     <div class="editor-scroll">
       <div class="editor-page">
 
-        <!-- Meta row: status + github -->
+        <!-- Meta row: status + github + vibeboard -->
         <div class="idea-meta-row">
           <span class="status-badge ${statusCls}"
                 id="status-badge"
@@ -69,6 +69,13 @@ function renderEditor() {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
             </button>
           </div>
+          ${!isVersionView ? `
+          <button class="vibeboard-open-btn" onclick="renderVibeBoard('${escapeAttr(id)}')" title="Open VibeBoard for this idea">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/>
+            </svg>
+            VibeBoard
+          </button>` : ''}
         </div>
 
         <!-- Title -->
@@ -787,7 +794,13 @@ function applySlashItem(id) {
   const item = SLASH_ITEMS.find(i => i.id === id);
   if (!item) return;
 
-  const contentEl = document.getElementById('editor-content');
+  // Focus whichever editor contains the current selection
+  const _sel = window.getSelection();
+  const _modalEl = document.getElementById('vb-card-modal-editor');
+  const _mainEl  = document.getElementById('editor-content');
+  const contentEl = (_modalEl && _sel && _sel.rangeCount &&
+                     _modalEl.contains(_sel.getRangeAt(0).commonAncestorContainer))
+    ? _modalEl : _mainEl;
   if (!contentEl) return;
   contentEl.focus();
 
@@ -816,15 +829,19 @@ function applySlashItem(id) {
 
 function initFloatToolbar() {
   document.addEventListener('selectionchange', () => {
-    const contentEl = document.getElementById('editor-content');
-    if (!contentEl || APP.ui.selectedVersion !== null) { hideFloatToolbar(); return; }
-
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) { hideFloatToolbar(); return; }
 
-    // Check selection is inside editor-content
     const range = sel.getRangeAt(0);
-    if (!contentEl.contains(range.commonAncestorContainer)) { hideFloatToolbar(); return; }
+
+    // Support both the main editor and the vibe card modal editor
+    const contentEl   = document.getElementById('editor-content');
+    const modalEditorEl = document.getElementById('vb-card-modal-editor');
+
+    const inMainEditor  = contentEl && APP.ui.selectedVersion === null && contentEl.contains(range.commonAncestorContainer);
+    const inModalEditor = modalEditorEl && modalEditorEl.contains(range.commonAncestorContainer);
+
+    if (!inMainEditor && !inModalEditor) { hideFloatToolbar(); return; }
 
     // Small delay so rect is accurate after browser renders selection
     requestAnimationFrame(() => {
@@ -897,7 +914,12 @@ function floatFmtLink() {
   const url = prompt('Enter URL:', 'https://');
   if (!url || url === 'https://') return;
   document.execCommand('createLink', false, url);
-  document.getElementById('editor-content')?.querySelectorAll('a').forEach(a => {
+  // Apply target/rel in whichever editor the selection is in
+  const editorEl = document.getElementById('vb-card-modal-editor') &&
+    document.getElementById('vb-card-modal-editor').contains(sel.anchorNode)
+      ? document.getElementById('vb-card-modal-editor')
+      : document.getElementById('editor-content');
+  editorEl?.querySelectorAll('a').forEach(a => {
     if (a.href === url) { a.target = '_blank'; a.rel = 'noopener'; }
   });
 }

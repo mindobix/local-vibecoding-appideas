@@ -15,7 +15,8 @@ const DEFAULT_CATEGORIES = [
 function getDefaultState() {
   return {
     categories: [...DEFAULT_CATEGORIES],
-    ideas: {}
+    ideas:      {},
+    vibeBoard:  null,   // initialized lazily by ensureVibeBoardState()
   };
 }
 
@@ -36,7 +37,15 @@ function loadAppState() {
         if (!Array.isArray(idea.versions)) idea.versions = [];
         if (typeof idea.draft !== 'string') idea.draft = '';
         if (!idea.githubUrl) idea.githubUrl = '';
+        if (!Array.isArray(idea.vibeCards)) idea.vibeCards = [];
+        idea.vibeCards.forEach(card => {
+          if (!('draft' in card)) card.draft = '';
+          if (!Array.isArray(card.attachments)) card.attachments = [];
+        });
       });
+
+      // Ensure vibeBoard key exists (may be null for older saves — lazily inited later)
+      if (!('vibeBoard' in parsed)) parsed.vibeBoard = null;
 
       return parsed;
     }
@@ -103,9 +112,18 @@ function restoreData(event) {
         if (!Array.isArray(idea.versions)) idea.versions = [];
         if (typeof idea.draft !== 'string') idea.draft = '';
         if (!idea.githubUrl) idea.githubUrl = '';
+        if (!Array.isArray(idea.vibeCards)) idea.vibeCards = [];
+        idea.vibeCards.forEach(card => {
+          if (!('draft' in card)) card.draft = '';
+          if (!Array.isArray(card.attachments)) card.attachments = [];
+        });
       });
 
-      APP.state = { categories: data.categories, ideas: data.ideas };
+      APP.state = {
+        categories: data.categories,
+        ideas:      data.ideas,
+        vibeBoard:  data.vibeBoard || null,
+      };
       saveAppState();
 
       APP.ui.selectedIdea    = null;

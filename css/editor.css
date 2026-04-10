@@ -54,7 +54,7 @@
 /* ─── Slash Command Menu ─────────────────────────────────────────────────── */
 .slash-menu {
   position: fixed;
-  z-index: 600;
+  z-index: 1100;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: var(--radius-lg);
@@ -135,7 +135,7 @@
 /* ─── Floating Inline Toolbar ────────────────────────────────────────────── */
 .float-toolbar {
   position: fixed;
-  z-index: 700;
+  z-index: 1100;
   display: none;
   align-items: center;
   gap: 1px;
@@ -697,7 +697,7 @@
 /* ─── Color Menu ─────────────────────────────────────────────────────────── */
 .color-menu {
   position: fixed;
-  z-index: 800;
+  z-index: 1100;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: var(--radius-lg);
