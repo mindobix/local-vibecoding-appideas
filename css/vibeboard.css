@@ -1172,3 +1172,15 @@
   outline: none;
   border-color: var(--info);
 }
+
+/* Import: auto-match hint on Idea label */
+.import-match-hint {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--success);
+  margin-left: 5px;
+  opacity: 0.8;
+}
+.import-match-hint--warn {
+  color: var(--warning);
+}

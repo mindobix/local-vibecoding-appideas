@@ -874,7 +874,7 @@ function _hydrateCardContent(container, allCards) {
     if (card.draft) {
       el.innerHTML = card.draft;
     } else {
-      el.textContent = card.text || '';
+      el.innerText = card.text || '';
     }
   });
 }
@@ -1675,6 +1675,32 @@ function onImportFileSelected(event) {
   reader.readAsText(file);
 }
 
+// Fuzzy-match an app repo name (e.g. "local-trading-journal") to the best
+// matching idea title.  Returns the idea ID with the highest word-overlap
+// score, or '' if no ideas exist.
+function _guessIdeaId(appName, ideaIds, ideas) {
+  if (!ideaIds.length) return '';
+
+  // Normalise: strip "local-" prefix, split on hyphens/underscores
+  const words = appName.replace(/^local-/, '').split(/[-_\s]+/)
+    .map(w => w.toLowerCase())
+    .filter(w => w.length > 2);
+
+  let bestId    = '';
+  let bestScore = 0;
+
+  for (const id of ideaIds) {
+    const title = (ideas[id].title || '').toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (title.includes(w)) score++;
+    }
+    if (score > bestScore) { bestScore = score; bestId = id; }
+  }
+
+  return bestId;  // '' if no word matched any idea title
+}
+
 function _renderImportModal() {
   ensureVibeBoardState();
   const ideas   = APP.state.ideas;
@@ -1685,10 +1711,6 @@ function _renderImportModal() {
   // Default column: find "Vibe Coding" or fallback to first
   const defaultColId = columns.find(c => /vibe.?cod/i.test(c.name))?.id || columns[0]?.id || '';
 
-  const ideaOptions = ideaIds.length
-    ? ideaIds.map(id => `<option value="${escapeAttr(id)}">${escapeHtml(ideas[id].title || 'Untitled')}</option>`).join('')
-    : '<option value="">— No ideas yet —</option>';
-
   const colOptions = columns
     .map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultColId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
     .join('');
@@ -1697,8 +1719,22 @@ function _renderImportModal() {
     cats.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join('');
 
   const cardsHtml = _importPending.map((card, idx) => {
-    const files = Array.isArray(card.files) ? card.files : [];
+    const files    = Array.isArray(card.files) ? card.files : [];
     const fileList = files.slice(0, 5).join(', ') + (files.length > 5 ? ` +${files.length - 5} more` : '');
+
+    // Auto-match app name → idea title (best-effort fuzzy)
+    const matchedId = _guessIdeaId(card.appName || '', ideaIds, ideas);
+
+    const ideaOptions = ideaIds.length
+      ? '<option value="">— Select idea —</option>' +
+        ideaIds.map(id =>
+          `<option value="${escapeAttr(id)}"${id === matchedId ? ' selected' : ''}>${escapeHtml(ideas[id].title || 'Untitled')}</option>`
+        ).join('')
+      : '<option value="">— No ideas yet —</option>';
+
+    const matchLabel = matchedId
+      ? `<span class="import-match-hint">auto-matched</span>`
+      : `<span class="import-match-hint import-match-hint--warn">no match — please select</span>`;
 
     return `
 <div class="import-card-row" data-idx="${idx}">
@@ -1716,7 +1752,7 @@ function _renderImportModal() {
     ${fileList ? `<div class="import-card-files">${escapeHtml(fileList)}</div>` : ''}
   </div>
   <div class="import-card-selectors">
-    <label class="import-sel-label">Idea</label>
+    <label class="import-sel-label">Idea ${matchLabel}</label>
     <select class="import-sel import-idea-sel" data-idx="${idx}">${ideaOptions}</select>
     <label class="import-sel-label">Column</label>
     <select class="import-sel import-col-sel" data-idx="${idx}">${colOptions}</select>
