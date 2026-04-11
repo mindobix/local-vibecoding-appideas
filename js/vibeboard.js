@@ -1648,14 +1648,45 @@ function _buildZip(files) {
 let _importPending    = [];    // raw cards parsed from the JSON file
 let _importFileHandle = null;  // FileSystemFileHandle — used to clear file after import
 
-function openImportCommits() {
+// Persist the last-used file handle so showOpenFilePicker reopens in the same dir.
+function _saveImportHandle(handle) {
+  try {
+    const req = indexedDB.open('vibecoding_db', 1);
+    req.onsuccess = (e) => {
+      const tx = e.target.result.transaction('appstate', 'readwrite');
+      tx.objectStore('appstate').put(handle, '_importFileHandle');
+    };
+  } catch (_) {}
+}
+
+function _loadImportHandle() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('vibecoding_db', 1);
+      req.onsuccess = (e) => {
+        const r = e.target.result.transaction('appstate', 'readonly')
+                    .objectStore('appstate').get('_importFileHandle');
+        r.onsuccess = () => resolve(r.result || null);
+        r.onerror   = () => resolve(null);
+      };
+      req.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+}
+
+async function openImportCommits() {
   // Prefer File System Access API (gives a writable handle so we can clear after import)
   if (typeof window.showOpenFilePicker === 'function') {
-    window.showOpenFilePicker({
+    const savedHandle = await _loadImportHandle();
+    const opts = {
       types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
       multiple: false,
-    }).then(async ([handle]) => {
+    };
+    if (savedHandle) opts.startIn = savedHandle; // reopens in last-used directory
+
+    window.showOpenFilePicker(opts).then(async ([handle]) => {
       _importFileHandle = handle;
+      _saveImportHandle(handle); // remember for next time
       const file = await handle.getFile();
       const text = await file.text();
       _parseImportData(text);
