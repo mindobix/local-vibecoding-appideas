@@ -39,9 +39,6 @@ for dir in "$VIBECODE_DIR"/*/; do
 
   app="$(basename "$dir")"
 
-  # Skip the appideas app itself — it IS the destination
-  [ "$app" = "local-vibecoding-appideas" ] && continue
-
   hook_file="$dir/.git/hooks/post-commit"
 
   # If a hook already exists and isn't ours, leave it alone
@@ -60,7 +57,7 @@ done
 echo ""
 echo "Done. Installed/updated: $installed   Skipped (foreign hooks): $skipped"
 echo ""
-echo "Each commit in a vibecode app will now append a card to:"
+echo "Each commit in a vibecode app (including this one) will now append a card to:"
 echo "  $VIBECODE_DIR/local-vibecoding-appideas/data/incoming/pending.json"
 echo ""
 echo "Open the VibeCoding App Ideas app and click  ⬇ Import Commits  to review them."
