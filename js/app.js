@@ -12,8 +12,8 @@ const APP = {
 };
 
 // ─── Init ──────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  APP.state = loadAppState();
+document.addEventListener('DOMContentLoaded', async () => {
+  APP.state = await loadAppState();
   APP.state.categories.forEach(c => APP.ui.openCategories.add(c));
 
   document.getElementById('restore-input').addEventListener('change', restoreData);

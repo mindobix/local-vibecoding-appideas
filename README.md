@@ -32,7 +32,7 @@ VibeCoding App Ideas is a single HTML file. Open it. Start writing. Close the ta
 - **Turn into** — select any text, hit the `⠿` button in the floating toolbar, pick a block type to transform it instantly
 - **Text & background colors** — 10 text colors + 10 background highlight colors via the floating toolbar
 - **Floating format toolbar** — appears on text selection with all formatting options in one place; works inside VibeBoard card editors too
-- **Auto-save** — drafts save to localStorage 600ms after you stop typing. No save button needed.
+- **Auto-save** — drafts save automatically 600ms after you stop typing. No save button needed.
 
 ### Version History
 
@@ -85,7 +85,7 @@ Every card editor dialog has an **Export ZIP** button in the header. One tap pac
 ### Data & Privacy
 
 - **100% offline** — no server, no API, no account. Works with no internet connection.
-- **localStorage** — all data lives in your browser, private by default
+- **IndexedDB storage** — all data lives in your browser with no size restrictions (scales to gigabytes vs the ~5 MB localStorage cap). Existing localStorage data is auto-migrated on first load — nothing lost.
 - **Backup** — download a full JSON backup of all categories, ideas, versions, VibeBoard cards, and attachments
 - **Restore** — import any backup file to pick up exactly where you left off
 - **Resizable sidebar** — drag the divider to give the editor more room
@@ -133,7 +133,7 @@ Vanilla HTML, CSS, JavaScript. Zero dependencies. Zero frameworks. Zero build to
 - `css/editor.css` — Notion-style page editor + floating toolbar
 - `css/vibeboard.css` — Kanban board, cards, attachments
 - `js/app.js` — state, init, utilities
-- `js/storage.js` — localStorage, backup, restore
+- `js/storage.js` — IndexedDB storage, backup, restore
 - `js/sidebar.js` — category/idea CRUD, drag & drop, VibeBoard launch shortcut
 - `js/editor.js` — rich text editor, versions, floating toolbar, color menu
 - `js/vibeboard.js` — VibeBoard Kanban, card CRUD, drag & drop, clipboard copy, attachments
