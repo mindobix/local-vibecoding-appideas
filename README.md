@@ -82,6 +82,17 @@ Every card editor dialog has an **Export ZIP** button in the header. One tap pac
 - **Remove** any attachment with the ✕ button on its chip
 - **Attachment count badge** with a paperclip icon always visible on the card when attachments exist — invisible when empty
 
+### Import Commit Cards
+
+Every time you ship something in a vibecode app, the commit gets written to `data/incoming/pending.json`. The **Import Commits** button pulls those commits in as VibeBoard cards — one tap, no copy-paste.
+
+- **Auto-open** — after the first pick, the file picker remembers `pending.json` and reads it directly on every subsequent tap. No navigation, no extra clicks.
+- **Smart card preview** — a modal lists every pending commit with its message, app name, changed files, and timestamp before anything is imported
+- **Per-card controls** — choose which column to land in (default: Vibe Coding), assign a prompt category, and uncheck any commits you want to skip
+- **Auto-match to idea** — the importer matches the commit's app name to an existing idea in the sidebar and pre-selects it; override any match before confirming
+- **Clears after import** — once you confirm, the imported entries are removed from `pending.json` automatically so the queue stays clean
+- **Graceful fallback** — browsers without the File System Access API fall back to a standard file picker; clearing the queue is skipped silently
+
 ### Data & Privacy
 
 - **100% offline** — no server, no API, no account. Works with no internet connection.
