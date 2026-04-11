@@ -10,6 +10,7 @@ const VIBE_DEFAULT_COLUMNS = [
 ];
 
 const VIBE_DEFAULT_CATEGORIES = [
+  { id: 'vbcat-0',  name: 'AI Init Commit', color: '#10b981' },
   { id: 'vbcat-1',  name: 'Brainstorming', color: '#f59e0b' },
   { id: 'vbcat-2',  name: 'UI/UX',         color: '#a78bfa' },
   { id: 'vbcat-3',  name: 'Web UI',         color: '#3b82f6' },
@@ -68,6 +69,13 @@ function ensureIdeaVibeCards(ideaId) {
   if (idea && !Array.isArray(idea.vibeCards)) {
     idea.vibeCards = [];
   }
+}
+
+// Returns true once the idea has at least one card in the Shipped column.
+function _hasShippedCard(ideaId) {
+  const shippedCol = APP.state.vibeBoard?.columns?.find(c => /shipped/i.test(c.name));
+  if (!shippedCol) return false;
+  return APP.state.ideas[ideaId]?.vibeCards?.some(c => c.columnId === shippedCol.id) ?? false;
 }
 
 // ─── Render VibeBoard ─────────────────────────────────────────────────────────
@@ -370,7 +378,7 @@ function vbAddCard(colId, ideaId) {
     id:         generateId(),
     columnId:   colId,
     text:       '',
-    categoryId: null,
+    categoryId: _hasShippedCard(ideaId) ? null : 'vbcat-0',
     createdAt:  Date.now(),
     order:      colCards.length,
   };
@@ -1790,7 +1798,7 @@ function _renderImportModal() {
   const ideas   = APP.state.ideas;
   const ideaIds = Object.keys(ideas);
   const columns = APP.state.vibeBoard.columns;
-  const cats    = APP.state.vibeBoard.promptCategories;
+  const cats      = APP.state.vibeBoard.promptCategories;
 
   // Default column: find "Vibe Coding" or fallback to first
   const defaultColId = columns.find(c => /vibe.?cod/i.test(c.name))?.id || columns[0]?.id || '';
@@ -1798,9 +1806,6 @@ function _renderImportModal() {
   const colOptions = columns
     .map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultColId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
     .join('');
-
-  const catOptions = '<option value="">— No category —</option>' +
-    cats.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join('');
 
   const cardsHtml = _importPending.map((card, idx) => {
     const files    = Array.isArray(card.files) ? card.files : [];
@@ -1819,6 +1824,11 @@ function _renderImportModal() {
     const matchLabel = matchedId
       ? `<span class="import-match-hint">auto-matched</span>`
       : `<span class="import-match-hint import-match-hint--warn">no match — please select</span>`;
+
+    // Pre-select AI Init Commit if the matched idea has no shipped cards yet.
+    const defaultCatId = (!matchedId || !_hasShippedCard(matchedId)) ? 'vbcat-0' : '';
+    const catOptions = '<option value="">— No category —</option>' +
+      cats.map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultCatId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
 
     return `
 <div class="import-card-row" data-idx="${idx}">
