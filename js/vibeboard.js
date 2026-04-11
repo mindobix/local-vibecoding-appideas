@@ -1627,3 +1627,187 @@ function _buildZip(files) {
   result.set(eocdr, pos);
   return result;
 }
+
+// ─── COMMIT CARD IMPORT ────────────────────────────────────────────────────────
+//
+// Flow:
+//   1. User clicks "Import Commits" in the header
+//   2. File picker opens — they select pending.json from
+//      vibecode/local-vibecoding-appideas/data/incoming/pending.json
+//   3. A review modal appears showing each pending commit card with:
+//        • app name badge, commit hash, message, stat line, file list
+//        • idea selector  (which idea should this card go into?)
+//        • column selector (default: "Vibe Coding")
+//        • category selector
+//        • checkbox to skip individual cards
+//   4. On confirm the selected cards are added to their chosen ideas,
+//      the modal closes, and if the current view is the vibeboard for
+//      one of the affected ideas it re-renders.
+// ──────────────────────────────────────────────────────────────────────────────
+
+let _importPending = [];   // raw cards parsed from the JSON file
+
+function openImportCommits() {
+  document.getElementById('import-commits-input').click();
+}
+
+function onImportFileSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) throw new Error('Expected a JSON array of cards');
+      _importPending = data.filter(c => c && c.source === 'git-commit' && c.message);
+      if (_importPending.length === 0) {
+        showToast('No pending commit cards found in that file', 'error');
+        event.target.value = '';
+        return;
+      }
+      _renderImportModal();
+      openModal('import-commits-modal');
+    } catch (err) {
+      showToast('Could not read file: ' + err.message, 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function _renderImportModal() {
+  ensureVibeBoardState();
+  const ideas   = APP.state.ideas;
+  const ideaIds = Object.keys(ideas);
+  const columns = APP.state.vibeBoard.columns;
+  const cats    = APP.state.vibeBoard.promptCategories;
+
+  // Default column: find "Vibe Coding" or fallback to first
+  const defaultColId = columns.find(c => /vibe.?cod/i.test(c.name))?.id || columns[0]?.id || '';
+
+  const ideaOptions = ideaIds.length
+    ? ideaIds.map(id => `<option value="${escapeAttr(id)}">${escapeHtml(ideas[id].title || 'Untitled')}</option>`).join('')
+    : '<option value="">— No ideas yet —</option>';
+
+  const colOptions = columns
+    .map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultColId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
+    .join('');
+
+  const catOptions = '<option value="">— No category —</option>' +
+    cats.map(c => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+
+  const cardsHtml = _importPending.map((card, idx) => {
+    const files = Array.isArray(card.files) ? card.files : [];
+    const fileList = files.slice(0, 5).join(', ') + (files.length > 5 ? ` +${files.length - 5} more` : '');
+
+    return `
+<div class="import-card-row" data-idx="${idx}">
+  <label class="import-card-check">
+    <input type="checkbox" checked data-idx="${idx}" class="import-card-cb">
+  </label>
+  <div class="import-card-info">
+    <div class="import-card-top">
+      <span class="import-app-badge">${escapeHtml(card.appName || '?')}</span>
+      <span class="import-hash">${escapeHtml(card.commitHash || '')}</span>
+      <span class="import-ts">${card.timestamp ? new Date(card.timestamp).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : ''}</span>
+    </div>
+    <div class="import-card-msg">${escapeHtml(card.message || '')}</div>
+    ${card.statLine ? `<div class="import-card-stat">${escapeHtml(card.statLine)}</div>` : ''}
+    ${fileList ? `<div class="import-card-files">${escapeHtml(fileList)}</div>` : ''}
+  </div>
+  <div class="import-card-selectors">
+    <label class="import-sel-label">Idea</label>
+    <select class="import-sel import-idea-sel" data-idx="${idx}">${ideaOptions}</select>
+    <label class="import-sel-label">Column</label>
+    <select class="import-sel import-col-sel" data-idx="${idx}">${colOptions}</select>
+    <label class="import-sel-label">Category</label>
+    <select class="import-sel import-cat-sel" data-idx="${idx}">${catOptions}</select>
+  </div>
+</div>`;
+  }).join('');
+
+  const list = document.getElementById('import-cards-list');
+  if (list) list.innerHTML = cardsHtml;
+
+  const count = document.getElementById('import-modal-count');
+  if (count) count.textContent = `${_importPending.length} commit card${_importPending.length !== 1 ? 's' : ''} pending`;
+}
+
+function confirmImportCards() {
+  ensureVibeBoardState();
+
+  let added = 0;
+  const affectedIdeas = new Set();
+
+  _importPending.forEach((card, idx) => {
+    const cb     = document.querySelector(`.import-card-cb[data-idx="${idx}"]`);
+    if (!cb?.checked) return;   // user unchecked this card
+
+    const ideaSel = document.querySelector(`.import-idea-sel[data-idx="${idx}"]`);
+    const colSel  = document.querySelector(`.import-col-sel[data-idx="${idx}"]`);
+    const catSel  = document.querySelector(`.import-cat-sel[data-idx="${idx}"]`);
+
+    const ideaId  = ideaSel?.value;
+    const colId   = colSel?.value;
+    const catId   = catSel?.value || null;
+
+    if (!ideaId || !APP.state.ideas[ideaId]) return;
+
+    ensureIdeaVibeCards(ideaId);
+    const cards = APP.state.ideas[ideaId].vibeCards;
+
+    // Skip if already imported (match by fullHash stored in commitMeta)
+    if (cards.some(c => c.commitMeta?.fullHash === card.fullHash)) return;
+
+    const colCards = cards.filter(c => c.columnId === colId);
+
+    // Build card text: message + stat line + file list
+    const fileList = Array.isArray(card.files) ? card.files.slice(0, 8).join('\n') : '';
+    const textParts = [
+      card.message,
+      card.body ? `\n${card.body}` : '',
+      card.statLine ? `\n${card.statLine}` : '',
+      fileList ? `\nFiles:\n${fileList}` : '',
+    ].filter(Boolean);
+    const text = textParts.join('').trim();
+
+    const vibeCard = {
+      id:         generateId(),
+      columnId:   colId,
+      text,
+      categoryId: catId,
+      createdAt:  card.timestamp ? new Date(card.timestamp).getTime() : Date.now(),
+      order:      colCards.length,
+      commitMeta: {
+        appName:    card.appName,
+        fullHash:   card.fullHash,
+        commitHash: card.commitHash,
+        branch:     card.branch,
+        author:     card.author,
+        timestamp:  card.timestamp,
+      },
+    };
+
+    cards.push(vibeCard);
+    affectedIdeas.add(ideaId);
+    added++;
+  });
+
+  if (added === 0) {
+    showToast('Nothing to import — all cards were unchecked or already imported', 'error');
+    return;
+  }
+
+  saveAppState();
+  closeModal('import-commits-modal');
+  _importPending = [];
+
+  // Re-render the board if we're currently viewing one of the affected ideas
+  const currentBoardIdea = _boardIdeaId();
+  if (currentBoardIdea && affectedIdeas.has(currentBoardIdea)) {
+    renderVibeBoard(currentBoardIdea);
+  }
+  renderSidebar();
+
+  showToast(`${added} commit card${added !== 1 ? 's' : ''} imported`);
+}

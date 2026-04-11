@@ -1010,3 +1010,165 @@
   padding: 2px 10px;
   opacity: 1;
 }
+
+/* ─── Import Commits Modal ────────────────────────────────────────────────── */
+
+.import-commits-modal-inner {
+  max-width: 780px;
+  width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.import-commits-modal-inner .modal-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.import-cards-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 12px;
+}
+
+/* Header Import button variant */
+.header-btn--import {
+  color: var(--info);
+  border-color: rgba(59,130,246,0.25);
+}
+.header-btn--import:hover {
+  background: rgba(59,130,246,0.10);
+  border-color: rgba(59,130,246,0.45);
+}
+
+/* Each pending commit card row */
+.import-card-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition);
+}
+.import-card-row:has(.import-card-cb:checked) {
+  border-color: var(--border-2);
+}
+.import-card-row:has(.import-card-cb:not(:checked)) {
+  opacity: 0.45;
+}
+
+.import-card-check {
+  padding-top: 2px;
+  cursor: pointer;
+}
+.import-card-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+
+.import-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.import-card-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.import-app-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(59,130,246,0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,0.25);
+  white-space: nowrap;
+}
+
+.import-hash {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+}
+
+.import-ts {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: auto;
+}
+
+.import-card-msg {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-card-stat {
+  font-size: 11px;
+  color: var(--success);
+}
+
+.import-card-files {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Selectors column */
+.import-card-selectors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+  max-width: 200px;
+}
+
+.import-sel-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.import-sel-label:first-child { margin-top: 0; }
+
+.import-sel {
+  width: 100%;
+  padding: 4px 7px;
+  font-size: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.import-sel:focus {
+  outline: none;
+  border-color: var(--info);
+}

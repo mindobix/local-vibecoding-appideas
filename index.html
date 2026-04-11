@@ -27,7 +27,12 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5z"/></svg>
     Restore
   </button>
+  <button class="header-btn header-btn--import" onclick="openImportCommits()" title="Import commit cards from vibecode apps">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18l-7 7h4v6h6v-6h4l-7-7z"/></svg>
+    Import Commits
+  </button>
   <input type="file" id="restore-input" accept=".json" style="display:none">
+  <input type="file" id="import-commits-input" accept=".json" style="display:none" onchange="onImportFileSelected(event)">
 </header>
 
 <!-- ─── APP LAYOUT ──────────────────────────────────────────────────────── -->
@@ -222,6 +227,29 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('delete-version-modal')">Cancel</button>
         <button class="btn btn-danger" onclick="confirmDeleteVersion()">Delete Version</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL: Import Commit Cards ──────────────────────────────────────── -->
+<div class="overlay" id="import-commits-modal" onclick="overlayClick(event,'import-commits-modal')">
+  <div class="modal import-commits-modal-inner">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">Import Commit Cards</div>
+        <div class="modal-sub" id="import-modal-count"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal('import-commits-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="import-cards-list" id="import-cards-list"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('import-commits-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmImportCards()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18l-7 7h4v6h6v-6h4l-7-7z"/></svg>
+          Import Selected
+        </button>
       </div>
     </div>
   </div>
