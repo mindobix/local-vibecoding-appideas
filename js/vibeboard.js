@@ -1645,10 +1645,28 @@ function _buildZip(files) {
 //      one of the affected ideas it re-renders.
 // ──────────────────────────────────────────────────────────────────────────────
 
-let _importPending = [];   // raw cards parsed from the JSON file
+let _importPending    = [];    // raw cards parsed from the JSON file
+let _importFileHandle = null;  // FileSystemFileHandle — used to clear file after import
 
 function openImportCommits() {
-  document.getElementById('import-commits-input').click();
+  // Prefer File System Access API (gives a writable handle so we can clear after import)
+  if (typeof window.showOpenFilePicker === 'function') {
+    window.showOpenFilePicker({
+      types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
+      multiple: false,
+    }).then(async ([handle]) => {
+      _importFileHandle = handle;
+      const file = await handle.getFile();
+      const text = await file.text();
+      _parseImportData(text);
+    }).catch(err => {
+      if (err.name !== 'AbortError') showToast('Could not open file: ' + err.message, 'error');
+    });
+  } else {
+    // Fallback for browsers without File System Access API (no write-back possible)
+    _importFileHandle = null;
+    document.getElementById('import-commits-input').click();
+  }
 }
 
 function onImportFileSelected(event) {
@@ -1656,23 +1674,40 @@ function onImportFileSelected(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (!Array.isArray(data)) throw new Error('Expected a JSON array of cards');
-      _importPending = data.filter(c => c && c.source === 'git-commit' && c.message);
-      if (_importPending.length === 0) {
-        showToast('No pending commit cards found in that file', 'error');
-        event.target.value = '';
-        return;
-      }
-      _renderImportModal();
-      openModal('import-commits-modal');
-    } catch (err) {
-      showToast('Could not read file: ' + err.message, 'error');
-    }
+    _parseImportData(e.target.result);
     event.target.value = '';
   };
   reader.readAsText(file);
+}
+
+function _parseImportData(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) throw new Error('Expected a JSON array of cards');
+    _importPending = data.filter(c => c && c.source === 'git-commit' && c.message);
+    if (_importPending.length === 0) {
+      showToast('No pending commit cards found in that file', 'error');
+      return;
+    }
+    _renderImportModal();
+    openModal('import-commits-modal');
+  } catch (err) {
+    showToast('Could not read file: ' + err.message, 'error');
+  }
+}
+
+async function _clearPendingFile() {
+  if (!_importFileHandle) return;
+  try {
+    const writable = await _importFileHandle.createWritable();
+    await writable.write('[]');
+    await writable.close();
+  } catch (err) {
+    // Non-fatal — file may have moved or permission revoked
+    console.warn('[VibeCoding] Could not clear pending.json:', err.message);
+  } finally {
+    _importFileHandle = null;
+  }
 }
 
 // Fuzzy-match an app repo name (e.g. "local-trading-journal") to the best
@@ -1837,6 +1872,7 @@ function confirmImportCards() {
   saveAppState();
   closeModal('import-commits-modal');
   _importPending = [];
+  _clearPendingFile();  // write [] back to pending.json (no-op if handle unavailable)
 
   // Re-render the board if we're currently viewing one of the affected ideas
   const currentBoardIdea = _boardIdeaId();
