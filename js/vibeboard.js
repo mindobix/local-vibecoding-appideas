@@ -1678,15 +1678,33 @@ async function openImportCommits() {
   // Prefer File System Access API (gives a writable handle so we can clear after import)
   if (typeof window.showOpenFilePicker === 'function') {
     const savedHandle = await _loadImportHandle();
-    const opts = {
+
+    // If we have a saved handle, try to read the file directly — no picker needed.
+    if (savedHandle) {
+      try {
+        // Re-request permission if needed (may show a one-time browser prompt).
+        let perm = await savedHandle.queryPermission({ mode: 'read' });
+        if (perm === 'prompt') perm = await savedHandle.requestPermission({ mode: 'read' });
+        if (perm === 'granted') {
+          _importFileHandle = savedHandle;
+          const file = await savedHandle.getFile();
+          const text = await file.text();
+          _parseImportData(text);
+          return;
+        }
+      } catch (_) {
+        // Handle gone or permission denied — fall through to picker below.
+      }
+    }
+
+    // First time (or handle lost): show the picker and save the chosen handle.
+    window.showOpenFilePicker({
       types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
       multiple: false,
-    };
-    if (savedHandle) opts.startIn = savedHandle; // reopens in last-used directory
-
-    window.showOpenFilePicker(opts).then(async ([handle]) => {
+      ...(savedHandle ? { startIn: savedHandle } : {}),
+    }).then(async ([handle]) => {
       _importFileHandle = handle;
-      _saveImportHandle(handle); // remember for next time
+      _saveImportHandle(handle);
       const file = await handle.getFile();
       const text = await file.text();
       _parseImportData(text);
