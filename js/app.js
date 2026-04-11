@@ -22,7 +22,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFloatToolbar();
   renderSidebar();
   renderEditorEmpty();
+  initChipRotation();
 });
+
+// ─── Chip Rotation ────────────────────────────────────────────────────────
+function initChipRotation() {
+  const el = document.getElementById('logo-chip-text');
+  if (!el) return;
+
+  function chipHtml(cat) {
+    let prefix;
+    if (cat === null) return 'App <span class="logo-sub-accent">Ideas</span>';
+    if (cat.endsWith(' Apps')) prefix = cat.slice(0, -5) + ' App';
+    else if (cat.endsWith('Apps')) prefix = cat.slice(0, -4) + 'App';
+    else prefix = cat;
+    return prefix + ' <span class="logo-sub-accent">Ideas</span>';
+  }
+
+  const labels = [null, ...APP.state.categories].map(chipHtml);
+  let idx = 0;
+
+  setInterval(() => {
+    idx = (idx + 1) % labels.length;
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.innerHTML = labels[idx];
+      el.style.opacity = '1';
+    }, 1400); // wait for fade-out to finish before swapping text
+  }, 15000);
+}
 
 // ─── Toast ────────────────────────────────────────────────────────────────
 let _toastTimer = null;

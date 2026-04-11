@@ -43,6 +43,7 @@ function _idbPut(db, value) {
 }
 
 const DEFAULT_CATEGORIES = [
+  'AI Init Commit',
   'AI Apps',
   'Android Apps',
   'iOS Apps',
