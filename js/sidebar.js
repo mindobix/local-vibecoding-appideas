@@ -129,11 +129,10 @@ function buildCategoryEl(category) {
 }
 
 function buildIdeaEl(id, idea) {
-  const isSelected = APP.ui.selectedIdea === id;
-  const firstColId = APP.state.vibeBoard?.columns?.[0]?.id;
-  const pending    = firstColId
-    ? (idea.vibeCards || []).filter(c => c.columnId === firstColId).length
-    : 0;
+  const isSelected  = APP.ui.selectedIdea === id;
+  const cols        = APP.state.vibeBoard?.columns || [];
+  const first3Ids   = new Set(cols.slice(0, 3).map(c => c.id));
+  const pending     = (idea.vibeCards || []).filter(c => first3Ids.has(c.columnId)).length;
 
   const statusDots = {
     'idea':        '#888',
@@ -156,7 +155,6 @@ function buildIdeaEl(id, idea) {
     </span>
     <span class="sidebar-idea-dot" style="background:${dotColor}; box-shadow: 0 0 4px ${dotColor}44"></span>
     <span class="sidebar-idea-name">${escapeHtml(idea.title)}</span>
-    ${pending > 0 ? `<span class="sidebar-pending-badge" title="${pending} prompt${pending !== 1 ? 's' : ''} pending in queue">${pending}</span>` : ''}
     <div class="sidebar-idea-actions">
       <button class="sidebar-icon-btn sidebar-icon-btn--detail" title="App Idea Detail"
         onclick="selectIdeaEditor('${escapeAttr(id)}'); event.stopPropagation()">
@@ -171,6 +169,7 @@ function buildIdeaEl(id, idea) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       </button>
     </div>
+    ${pending > 0 ? `<span class="sidebar-pending-badge" title="${pending} prompt${pending !== 1 ? 's' : ''} pending in queue">${pending}</span>` : ''}
   `;
 
   // ── Drag events

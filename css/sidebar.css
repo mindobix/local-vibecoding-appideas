@@ -79,7 +79,6 @@
 }
 
 .sidebar-cat-name {
-  flex: 1;
   font-size: 13px;
   font-weight: 600;
   color: #b0b0b0;
@@ -111,6 +110,7 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  margin-left: auto;
   opacity: 0;
   transition: opacity var(--transition);
 }
