@@ -8,12 +8,14 @@ const APP = {
     selectedVersion: null,   // version id or null (latest)
     openCategories:  new Set(),
     isDirty:         false,
+    activeTab:       'all',  // 'all' | 'vibecoding'
   }
 };
 
 // ─── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   APP.state = await loadAppState();
+  APP.ui.activeTab = localStorage.getItem('vibecoding_active_tab') || 'all';
   APP.state.categories.forEach(c => APP.ui.openCategories.add(c));
 
   document.getElementById('restore-input').addEventListener('change', restoreData);

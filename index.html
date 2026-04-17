@@ -41,7 +41,10 @@
   <!-- LEFT: Sidebar — Categories & Ideas -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">App Categories</span>
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab" id="tab-all" onclick="setActiveTab('all')">All App Ideas</button>
+        <button class="sidebar-tab" id="tab-vibecoding" onclick="setActiveTab('vibecoding')">Vibe Coding Ideas</button>
+      </div>
     </div>
     <div class="sidebar-tree" id="sidebar-tree">
       <!-- rendered by sidebar.js -->

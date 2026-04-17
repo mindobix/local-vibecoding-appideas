@@ -15,14 +15,53 @@ function getCategoryMeta(name) {
   return CATEGORY_META[name] || { color: '#888', icon: 'M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z' };
 }
 
+// ─── Tab Switching ────────────────────────────────────────────────────────────
+function setActiveTab(tab) {
+  APP.ui.activeTab = tab;
+  localStorage.setItem('vibecoding_active_tab', tab);
+  renderSidebar();
+}
+
+function getVibeCodingIdeaIds() {
+  const cols = APP.state.vibeBoard?.columns || [];
+  const vcCol = cols.find(c => c.name.toLowerCase() === 'vibe coding');
+  if (!vcCol) return new Set();
+  const vcIds = new Set();
+  Object.entries(APP.state.ideas).forEach(([id, idea]) => {
+    if ((idea.vibeCards || []).some(card => card.columnId === vcCol.id)) {
+      vcIds.add(id);
+    }
+  });
+  return vcIds;
+}
+
 // ─── Render Sidebar ───────────────────────────────────────────────────────────
 function renderSidebar() {
   const tree = document.getElementById('sidebar-tree');
   tree.innerHTML = '';
 
+  // Sync tab button active states
+  document.querySelectorAll('.sidebar-tab').forEach(btn => btn.classList.remove('active'));
+  const activeTabEl = document.getElementById(APP.ui.activeTab === 'vibecoding' ? 'tab-vibecoding' : 'tab-all');
+  if (activeTabEl) activeTabEl.classList.add('active');
+
+  const filteredIds = APP.ui.activeTab === 'vibecoding' ? getVibeCodingIdeaIds() : null;
+
+  let anyVisible = false;
   APP.state.categories.forEach(cat => {
-    tree.appendChild(buildCategoryEl(cat));
+    const ideas = getIdeasInCategory(cat);
+    const filtered = filteredIds ? ideas.filter(([id]) => filteredIds.has(id)) : ideas;
+    if (filteredIds !== null && filtered.length === 0) return;
+    anyVisible = true;
+    tree.appendChild(buildCategoryEl(cat, filteredIds ? filtered : null));
   });
+
+  if (filteredIds !== null && !anyVisible) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-tab-empty';
+    empty.textContent = 'No ideas have Vibe Coding cards yet';
+    tree.appendChild(empty);
+  }
 
   // Add Category button
   const btn = document.createElement('button');
@@ -35,9 +74,9 @@ function renderSidebar() {
   tree.appendChild(btn);
 }
 
-function buildCategoryEl(category) {
+function buildCategoryEl(category, filteredIdeas = null) {
   const isOpen  = APP.ui.openCategories.has(category);
-  const ideas   = getIdeasInCategory(category);
+  const ideas   = filteredIdeas !== null ? filteredIdeas : getIdeasInCategory(category);
   const meta    = getCategoryMeta(category);
 
   const div = document.createElement('div');
