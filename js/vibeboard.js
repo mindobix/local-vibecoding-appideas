@@ -51,6 +51,142 @@ function _repoNameFromUrl(url) {
   return m ? m[1] : '';
 }
 
+// Parse {owner, repo} from a GitHub URL — needed for the GitHub API fetch fallback.
+function _parseGithubUrl(url) {
+  if (!url) return null;
+  const m = String(url).trim().match(/github\.com[:/]+([^/]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+
+// ── Browser-side README parser (mirror of tools/build-app-features.js) ───────
+const _GH_STOPWORDS = new Set(['the','and','for','with','from','into','your','their','this','that','using','each','any','all','one','two','too','app','apps','these','those','have','has','will','can']);
+const _GH_SKIP_HEADINGS = /^(getting started|tech stack|installation|usage|license|setup|requirements|prerequisites|contributing|credits|acknowledgments|part of|why this exists|who this is for|keyboard shortcuts|common commands|hard rules|important context|skills and routines|coding standards|project structure|security defaults|git workflow|what i am building|how i want you to work|what this is)/i;
+
+function _ghBuildKeywords(name) {
+  return [...new Set(
+    name.toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !_GH_STOPWORDS.has(w))
+  )];
+}
+
+function _ghCleanHeading(raw) {
+  return raw
+    .replace(/[*_`]/g, '')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/—.*$/, '')
+    .replace(/--.*$/, '')
+    .replace(/:\s.*$/, '')
+    .trim();
+}
+
+function _extractFeaturesFromMarkdown(md) {
+  const lines = (md || '').split('\n');
+  const out = [];
+  let inFeatures = false;
+
+  for (const line of lines) {
+    const h2 = line.match(/^## +(.+?)\s*$/);
+    if (h2) { inFeatures = /feature/i.test(_ghCleanHeading(h2[1])); continue; }
+    if (!inFeatures) continue;
+    const h3 = line.match(/^### +(.+?)\s*$/);
+    if (h3) { const n = _ghCleanHeading(h3[1]); if (n && !_GH_SKIP_HEADINGS.test(n)) out.push(n); continue; }
+    const h4 = line.match(/^#### +(.+?)\s*$/);
+    if (h4) { const n = _ghCleanHeading(h4[1]); if (n && !_GH_SKIP_HEADINGS.test(n)) out.push(n); }
+  }
+  if (out.length === 0) {
+    for (const line of lines) {
+      const h2 = line.match(/^## +(.+?)\s*$/);
+      if (!h2) continue;
+      const n = _ghCleanHeading(h2[1]);
+      if (!n || _GH_SKIP_HEADINGS.test(n)) continue;
+      out.push(n);
+    }
+  }
+  const seen = new Set();
+  return out
+    .filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(name => ({ name, keywords: _ghBuildKeywords(name) }))
+    .filter(f => f.keywords.length > 0);
+}
+
+// ── GitHub fetch + IndexedDB cache (used when no local taxonomy exists) ──────
+function _saveGhFeatureCache(cache) {
+  try {
+    const req = indexedDB.open('vibecoding_db', 1);
+    req.onsuccess = (e) => {
+      e.target.result.transaction('appstate', 'readwrite').objectStore('appstate').put(cache, '_ghFeatureCache');
+    };
+  } catch (_) {}
+}
+
+function _loadGhFeatureCache() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('vibecoding_db', 1);
+      req.onsuccess = (e) => {
+        const r = e.target.result.transaction('appstate', 'readonly').objectStore('appstate').get('_ghFeatureCache');
+        r.onsuccess = () => resolve(r.result || {});
+        r.onerror   = () => resolve({});
+      };
+      req.onerror = () => resolve({});
+    } catch (_) { resolve({}); }
+  });
+}
+
+let _ghCachePromise = null;
+function ensureGhFeatureCacheLoaded() {
+  if (window.APP_FEATURES?._ghLoaded) return Promise.resolve();
+  if (!_ghCachePromise) {
+    _ghCachePromise = _loadGhFeatureCache().then(cache => {
+      if (!window.APP_FEATURES) window.APP_FEATURES = { apps: {} };
+      if (!window.APP_FEATURES.apps) window.APP_FEATURES.apps = {};
+      Object.entries(cache).forEach(([repo, entry]) => {
+        if (!window.APP_FEATURES.apps[repo]) window.APP_FEATURES.apps[repo] = entry;
+      });
+      window.APP_FEATURES._ghLoaded = true;
+    });
+  }
+  return _ghCachePromise;
+}
+
+const _ghFetchInFlight = new Set();
+const _ghFetchFailed   = new Set();
+
+async function _fetchAndStoreGhFeatures(owner, repo) {
+  if (_ghFetchInFlight.has(repo) || _ghFetchFailed.has(repo)) return null;
+  _ghFetchInFlight.add(repo);
+  try {
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+      headers: { 'Accept': 'application/vnd.github.raw' },
+    });
+    if (!r.ok) { _ghFetchFailed.add(repo); return null; }
+    const md = await r.text();
+    const features = _extractFeaturesFromMarkdown(md);
+    if (!features.length) { _ghFetchFailed.add(repo); return null; }
+
+    const entry = { repoName: repo, features, _source: 'github' };
+    if (!window.APP_FEATURES) window.APP_FEATURES = { apps: {} };
+    if (!window.APP_FEATURES.apps) window.APP_FEATURES.apps = {};
+    window.APP_FEATURES.apps[repo] = entry;
+
+    const cache = await _loadGhFeatureCache();
+    cache[repo] = entry;
+    _saveGhFeatureCache(cache);
+
+    // Re-render timeline so the catalog appears
+    const ideaId = _boardIdeaId();
+    if (ideaId && APP.ui.vbView === 'timeline') renderVibeBoard(ideaId);
+    return entry;
+  } catch (_) {
+    _ghFetchFailed.add(repo);
+    return null;
+  } finally {
+    _ghFetchInFlight.delete(repo);
+  }
+}
+
 // Returns the feature catalog (array of {name, keywords}) for an idea,
 // drawn from the global APP_FEATURES via the idea's githubUrl.
 function _getIdeaFeatures(idea) {
@@ -84,6 +220,184 @@ function _classifyCardForIdea(card, idea) {
     }
   }
   return best.name;
+}
+
+// ─── Commit Card Rich Render ─────────────────────────────────────────────────
+// Build a GitHub-style structured render of a commit card. Goes into card.draft.
+// Designed to be re-render-safe via the data-commit-render="1" marker.
+
+function _formatCommitBodyHtml(body) {
+  if (!body) return '';
+  const lines = body.split('\n');
+  const out = [];
+  let bullets = [];
+  let para    = [];
+
+  function flushBullets() {
+    if (!bullets.length) return;
+    out.push(`<ul class="vb-commit-bullets">${
+      bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')
+    }</ul>`);
+    bullets = [];
+  }
+  function flushPara() {
+    if (!para.length) return;
+    out.push(`<p>${para.map(escapeHtml).join('<br>')}</p>`);
+    para = [];
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { flushBullets(); flushPara(); continue; }
+    if (/^Co-Authored-By:/i.test(line)) {
+      // Co-author trailers handled separately by the caller
+      flushBullets();
+      flushPara();
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      flushPara();
+      bullets.push(bullet[1]);
+    } else {
+      flushBullets();
+      para.push(line);
+    }
+  }
+  flushBullets();
+  flushPara();
+  return out.join('');
+}
+
+function _commitUrlFromIdea(githubUrl, fullHash) {
+  if (!githubUrl || !fullHash) return '';
+  const base = String(githubUrl).trim().replace(/\.git\/?$/, '').replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(base)) return '';
+  return `${base}/commit/${fullHash}`;
+}
+
+function _formatCommitDateAbs(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    month: 'long', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+}
+
+function _buildCommitCardDraft(meta, githubUrl) {
+  if (!meta) return '';
+  const fullHash  = meta.fullHash || '';
+  const shortHash = meta.commitHash || (fullHash ? fullHash.slice(0, 7) : '');
+  const author    = meta.author    || '';
+  const message   = meta.message   || '';
+  const body      = meta.body      || '';
+  const statLine  = meta.statLine  || '';
+
+  const dateRel   = meta.timestamp ? (typeof formatDateShort === 'function' ? formatDateShort(meta.timestamp) : '') : '';
+  const dateAbs   = _formatCommitDateAbs(meta.timestamp);
+  const commitUrl = _commitUrlFromIdea(githubUrl, fullHash);
+
+  // Extract co-authors from body
+  const coAuthors = [];
+  body.split('\n').forEach(line => {
+    const m = line.match(/^Co-Authored-By:\s*(.+?)\s*<(.+)>\s*$/i);
+    if (m) coAuthors.push({ name: m[1], email: m[2] });
+  });
+
+  const headerHtml = (author || dateRel || dateAbs)
+    ? `<div class="vb-commit-header">${
+        author ? `<strong>${escapeHtml(author)}</strong>` : ''
+      }${author && (dateRel || dateAbs) ? ', ' : ''}${
+        dateRel ? `<span class="vb-commit-rel">${escapeHtml(dateRel)}</span>` : ''
+      }${dateAbs ? ` <span class="vb-commit-abs">(${escapeHtml(dateAbs)})</span>` : ''}</div>`
+    : '';
+
+  const coAuthorTopHtml = coAuthors.map(co =>
+    `<div class="vb-commit-coauthor"><span class="vb-commit-coauthor-icon">↳</span> <strong>${escapeHtml(co.name)}</strong> <em>(Co-author)</em></div>`
+  ).join('');
+
+  const subjectHtml = message
+    ? `<div class="vb-commit-subject"><strong>${escapeHtml(message)}</strong></div>`
+    : '';
+
+  const bodyHtml = _formatCommitBodyHtml(body);
+
+  const coAuthorTrailerHtml = coAuthors.map(co =>
+    `<div class="vb-commit-trailer">Co-Authored-By: ${escapeHtml(co.name)} <a class="vb-commit-email" href="mailto:${escapeAttr(co.email)}">${escapeHtml(co.email)}</a></div>`
+  ).join('');
+
+  const statHtml = statLine
+    ? `<div class="vb-commit-stat">${escapeHtml(statLine)}</div>`
+    : '';
+
+  const hashHtml = shortHash
+    ? (commitUrl
+        ? `<a class="vb-commit-hash-link" href="${escapeAttr(commitUrl)}" target="_blank" rel="noopener">⌥ ${escapeHtml(shortHash)}</a>`
+        : `<span class="vb-commit-hash">⌥ ${escapeHtml(shortHash)}</span>`)
+    : '';
+  const ghHtml = commitUrl
+    ? `<a class="vb-commit-gh-link" href="${escapeAttr(commitUrl)}" target="_blank" rel="noopener">
+         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+         Open on GitHub
+       </a>`
+    : '';
+
+  const footerHtml = (hashHtml || ghHtml)
+    ? `<div class="vb-commit-footer">${hashHtml}${hashHtml && ghHtml ? '<span class="vb-commit-sep">|</span>' : ''}${ghHtml}</div>`
+    : '';
+
+  return `<div class="vb-commit-render" data-commit-render="1">
+${headerHtml}
+${coAuthorTopHtml}
+${subjectHtml}
+${bodyHtml}
+${coAuthorTrailerHtml}
+${statHtml}
+${footerHtml}
+</div>`;
+}
+
+// Recover message/body/statLine/files from old card.text (best-effort)
+// so we can re-render existing imported cards in the rich format.
+function _recoverCommitFieldsFromText(text) {
+  const out = { message: '', body: '', statLine: '', files: [] };
+  if (!text) return out;
+  const lines = text.split('\n');
+  out.message = lines[0] || '';
+
+  const statRegex = /^\s*\d+\s+files?\s+changed/i;
+  const statIdx   = lines.findIndex((l, i) => i > 0 && statRegex.test(l));
+  const filesIdx  = lines.findIndex((l, i) => i > 0 && /^Files:\s*$/.test(l));
+
+  if (statIdx >= 0) out.statLine = lines[statIdx].trim();
+  if (filesIdx >= 0) out.files = lines.slice(filesIdx + 1).filter(Boolean);
+
+  const bodyEnd = filesIdx >= 0 ? filesIdx : (statIdx >= 0 ? statIdx : lines.length);
+  out.body = lines.slice(1, bodyEnd).join('\n').replace(/^\n+|\n+$/g, '');
+  return out;
+}
+
+// Lazy-migration: ensure a commit card has a rich-rendered draft.
+// Idempotent — won't overwrite an existing rich render.
+function _ensureCommitCardDraft(card, idea) {
+  if (!card?.commitMeta) return;
+  const hasRich = typeof card.draft === 'string' && card.draft.includes('data-commit-render="1"');
+  if (hasRich) return;
+
+  // If commitMeta lacks the new fields, recover from card.text
+  const meta = { ...card.commitMeta };
+  if (!meta.message || meta.message.length === 0) {
+    const recovered = _recoverCommitFieldsFromText(card.text || '');
+    meta.message  = meta.message  || recovered.message;
+    meta.body     = meta.body     || recovered.body;
+    meta.statLine = meta.statLine || recovered.statLine;
+    meta.files    = meta.files    || recovered.files;
+    card.commitMeta = meta;
+  }
+
+  card.draft = _buildCommitCardDraft(meta, idea?.githubUrl);
 }
 
 // Re-seed featureTheme on every shipped card for an idea (called when
@@ -231,8 +545,8 @@ function renderVibeBoard(ideaId) {
   if (view === 'board') {
     const boardEl = document.getElementById('vibeboard');
     if (boardEl) _hydrateCardContent(boardEl, cards);
-    _applyVbSearchFilter();
   }
+  _applyVbSearchFilter();
 
   document.addEventListener('click', _vbOutsideClick, { capture: true });
 }
@@ -259,6 +573,7 @@ function _renderTimelineView(idea, cards, ideaId) {
 
   // Idea isn't linked to a repo (or repo has no taxonomy yet)
   const repoName       = _repoNameFromUrl(idea.githubUrl);
+  const ghParsed       = _parseGithubUrl(idea.githubUrl);
   const featureCatalog = _getIdeaFeatures(idea);
   const lacksCatalog   = featureCatalog.length === 0;
 
@@ -269,10 +584,26 @@ function _renderTimelineView(idea, cards, ideaId) {
       Cards will stay <em>Unclassified</em> until then.
     </div>`;
   } else if (lacksCatalog) {
-    banner = `<div class="vb-tl-banner">
-      No feature taxonomy found for <code>${escapeHtml(repoName)}</code>.
-      Run <code>bash tools/install-hooks.sh</code> to scan its README + project structure.
-    </div>`;
+    if (ghParsed && !_ghFetchFailed.has(ghParsed.repo)) {
+      // Kick off async fetch + cache. Re-renders timeline when ready.
+      ensureGhFeatureCacheLoaded()
+        .then(() => {
+          if (_getIdeaFeatures(idea).length > 0) {
+            const ideaId = _boardIdeaId();
+            if (ideaId && APP.ui.vbView === 'timeline') renderVibeBoard(ideaId);
+          } else {
+            _fetchAndStoreGhFeatures(ghParsed.owner, ghParsed.repo);
+          }
+        });
+      banner = `<div class="vb-tl-banner">
+        Fetching feature catalog for <code>${escapeHtml(repoName)}</code> from GitHub…
+      </div>`;
+    } else {
+      banner = `<div class="vb-tl-banner">
+        No feature taxonomy found for <code>${escapeHtml(repoName)}</code>.
+        Run <code>bash tools/install-hooks.sh</code> if cloned locally, or check the GitHub URL is correct.
+      </div>`;
+    }
   }
 
   if (shipped.length === 0) {
@@ -289,7 +620,246 @@ function _renderTimelineView(idea, cards, ideaId) {
   const shippedThisWeek = shipped.filter(c => (c.shippedAt || 0) >= oneWeekAgo).length;
   const themesUsed      = new Set(shipped.map(c => c.featureTheme || FEATURE_UNCLASSIFIED));
 
-  // Group by feature, sort cards within each newest-first
+  const sub = APP.ui.vbTimelineSub === 'categorized' ? 'categorized' : 'recent';
+
+  // Eagerly migrate any commit cards lacking a rich draft so the expanded
+  // panel renders correctly the first time the user toggles it open.
+  let mutated = false;
+  shipped.forEach(c => {
+    if (!c.commitMeta) return;
+    const before = c.draft;
+    _ensureCommitCardDraft(c, idea);
+    if (c.draft !== before) mutated = true;
+  });
+  if (mutated) saveAppState();
+
+  const body = sub === 'categorized'
+    ? _renderTimelineCategorized(shipped, featureCatalog, idea)
+    : _renderTimelineRecent(shipped, idea);
+
+  return `
+    <div class="vibeboard-timeline">
+      ${banner}
+      <div class="vb-tl-toolbar">
+        <div class="vb-tl-stats">
+          <span class="vb-tl-stat"><strong>${shipped.length}</strong> shipped</span>
+          <span class="vb-tl-stat-sep">•</span>
+          <span class="vb-tl-stat"><strong>${themesUsed.size}</strong> features</span>
+          <span class="vb-tl-stat-sep">•</span>
+          <span class="vb-tl-stat"><strong>${shippedThisWeek}</strong> this week</span>
+        </div>
+        <div class="vb-tl-subtabs">
+          <button class="vb-tl-subtab${sub === 'recent' ? ' active' : ''}"      onclick="setVbTimelineSub('recent')">Latest → Oldest</button>
+          <button class="vb-tl-subtab${sub === 'categorized' ? ' active' : ''}" onclick="setVbTimelineSub('categorized')">By Feature</button>
+        </div>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+function setVbTimelineSub(sub) {
+  APP.ui.vbTimelineSub = sub === 'categorized' ? 'categorized' : 'recent';
+  const ideaId = _boardIdeaId();
+  if (ideaId) renderVibeBoard(ideaId);
+}
+
+// Tracks which timeline cards are expanded (in-memory only, per session).
+const _vbTlExpanded = new Set();
+
+// First non-empty line of a string, trimmed.
+function _firstLineOf(s) {
+  return (s || '').split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
+}
+
+// First non-empty line ≥ minLen chars (so we skip tiny stubs like "Need").
+function _firstLongLineOf(s, minLen) {
+  return (s || '').split('\n').map(l => l.trim()).find(l => l.length >= minLen) || '';
+}
+
+// Strip HTML tags to plain text — used for non-commit cards whose content
+// lives in card.draft (rich editor HTML) and whose card.text may be empty.
+function _stripHtmlToText(html) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+// Pull a likely-title from the rich HTML: prefer first heading, then a
+// substantial bold block, then the longest paragraph-like block.
+function _extractTitleFromHtml(html) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+
+  // Don't pick up commit-card meta noise (date/hash) when scanning drafts.
+  tmp.querySelectorAll('.vb-commit-render').forEach(el => {
+    const subj = el.querySelector('.vb-commit-subject');
+    if (subj) {
+      const t = (subj.textContent || '').trim();
+      if (t.length >= 3) {
+        // Hoist commit subject as the title of this draft
+        const span = document.createElement('span');
+        span.textContent = t;
+        el.parentNode?.insertBefore(span, el);
+      }
+    }
+    el.remove();
+  });
+
+  // 1. First heading (h1-h6)
+  const h = tmp.querySelector('h1, h2, h3, h4, h5, h6');
+  if (h) {
+    const t = (h.textContent || '').trim();
+    if (t.length >= 3) return t;
+  }
+  // 2. First bold element with substantive text
+  for (const b of tmp.querySelectorAll('strong, b')) {
+    const t = (b.textContent || '').trim();
+    if (t.length >= 8) return t;
+  }
+  // 3. First reasonably long paragraph-like block
+  for (const blk of tmp.querySelectorAll('p, div, li, blockquote')) {
+    const t = (blk.textContent || '').trim();
+    if (t.length >= 10) return t;
+  }
+  // 4. Longest line of overall text
+  const lines = (tmp.textContent || '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length) {
+    const longest = lines.reduce((a, b) => a.length >= b.length ? a : b, '');
+    if (longest.length >= 5) return longest;
+  }
+  return '';
+}
+
+// At least 2 alphanumeric chars, so a stray period or comma doesn't qualify.
+function _isUsefulSubject(s) {
+  return (s || '').replace(/[^A-Za-z0-9]/g, '').length >= 2;
+}
+
+function _bestCardSubject(card) {
+  const meta = card.commitMeta || {};
+
+  // 1. Commit message wins for commit cards.
+  if (_isUsefulSubject(meta.message)) return meta.message.trim();
+
+  // 2. Title-like text from the rich draft (heading > bold > long block).
+  const fromDraft = _extractTitleFromHtml(card.draft);
+  if (_isUsefulSubject(fromDraft)) return fromDraft;
+
+  // 3. Plain card.text lines, but skip stubs <5 chars before falling back.
+  const longText = _firstLongLineOf(card.text, 5);
+  if (_isUsefulSubject(longText)) return longText;
+
+  // 4. Last resort: any first non-empty line from text or stripped draft.
+  const fallbacks = [
+    _firstLineOf(card.text),
+    _firstLineOf(_stripHtmlToText(card.draft)),
+  ];
+  for (const c of fallbacks) {
+    if (_isUsefulSubject(c)) return c.trim();
+  }
+  return '(no description)';
+}
+
+function vbToggleTimelineCard(cardId) {
+  const cardEl = document.querySelector(`.vb-tl-card[data-card-id="${cardId}"]`);
+  if (!cardEl) return;
+  const isOpen = !_vbTlExpanded.has(cardId);
+  if (isOpen) _vbTlExpanded.add(cardId); else _vbTlExpanded.delete(cardId);
+
+  cardEl.classList.toggle('expanded', isOpen);
+  const expEl = cardEl.querySelector('.vb-tl-card-expanded');
+  if (expEl) expEl.style.display = isOpen ? '' : 'none';
+  const tgEl = cardEl.querySelector('.vb-tl-card-toggle');
+  if (tgEl) tgEl.textContent = isOpen ? '▾' : '▸';
+}
+
+// Returns the rich HTML body to render in the expanded card, ensuring commit
+// cards have their structured draft generated.
+function _timelineRichHtml(card, idea) {
+  if (card.commitMeta) {
+    _ensureCommitCardDraft(card, idea);
+    if (card.draft) return card.draft;
+  }
+  if (card.draft) return card.draft;
+  return escapeHtml(card.text || '').replace(/\n/g, '<br>');
+}
+
+// Unified timeline-card renderer. Always shows a clickable summary row;
+// toggle expands to the full rich HTML.  opts.showTheme adds the feature
+// chip on the right of the meta row (used by Latest → Oldest sub-view).
+function _renderTimelineCard(c, idea, opts = {}) {
+  const meta    = c.commitMeta || {};
+  const date    = c.shippedAt ? new Date(c.shippedAt) : null;
+  const dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const timeStr = date ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+  const subject = _bestCardSubject(c);
+  const snippet = subject.slice(0, 200);
+  const hash    = meta.commitHash ? `<span class="vb-tl-card-hash">${escapeHtml(meta.commitHash)}</span>` : '';
+  const app     = meta.appName    ? `<span class="vb-tl-card-app">${escapeHtml(meta.appName)}</span>`    : '';
+
+  const theme   = c.featureTheme || FEATURE_UNCLASSIFIED;
+  const tColor  = _featureColorFor(theme);
+  const themeChip = opts.showTheme
+    ? `<span class="vb-tl-recent-theme" style="background:${tColor}22;color:${tColor};border-color:${tColor}55">${escapeHtml(theme)}</span>`
+    : '';
+
+  const isOpen   = _vbTlExpanded.has(c.id);
+  const richHtml = _timelineRichHtml(c, idea);
+  const borderStyle = opts.showTheme ? ` style="border-left:3px solid ${tColor}"` : '';
+
+  return `
+    <div class="vb-tl-card${isOpen ? ' expanded' : ''}" data-card-id="${escapeAttr(c.id)}"${borderStyle}>
+      <div class="vb-tl-card-summary" onclick="vbToggleTimelineCard('${escapeAttr(c.id)}')">
+        <div class="vb-tl-card-meta">
+          <span class="vb-tl-card-date">${escapeHtml(dateStr)}</span>
+          <span class="vb-tl-card-time">${escapeHtml(timeStr)}</span>
+          ${app}${hash}
+          ${themeChip}
+        </div>
+        <div class="vb-tl-card-text">
+          <span class="vb-tl-card-toggle">${isOpen ? '▾' : '▸'}</span>
+          <span class="vb-tl-card-subject">${escapeHtml(snippet)}${(subject || '').length > 200 ? '…' : ''}</span>
+        </div>
+      </div>
+      <div class="vb-tl-card-expanded" style="display:${isOpen ? '' : 'none'}">
+        <div class="vb-tl-card-rich">${richHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Sub-view: flat chronological list, latest first, day-grouped.
+function _renderTimelineRecent(shipped, idea) {
+  const sorted = shipped.slice().sort((a, b) => (b.shippedAt || 0) - (a.shippedAt || 0));
+
+  const dayGroups = new Map();
+  sorted.forEach(c => {
+    const d   = new Date(c.shippedAt || c.createdAt || Date.now());
+    const key = d.toISOString().slice(0, 10);
+    if (!dayGroups.has(key)) dayGroups.set(key, []);
+    dayGroups.get(key).push(c);
+  });
+
+  const sections = [...dayGroups.entries()].map(([key, list]) => {
+    const d        = new Date(key + 'T00:00:00');
+    const dayLabel = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const items    = list.map(c => _renderTimelineCard(c, idea, { showTheme: true })).join('');
+    return `
+      <div class="vb-tl-day">
+        <div class="vb-tl-day-label">${escapeHtml(dayLabel)} <span class="vb-tl-day-count">${list.length}</span></div>
+        <div class="vb-tl-day-cards">${items}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `<div class="vb-tl-recent">${sections}</div>`;
+}
+
+// Sub-view: grouped by feature catalog.
+function _renderTimelineCategorized(shipped, featureCatalog, idea) {
   const groups = new Map();
   shipped.forEach(c => {
     const theme = c.featureTheme || FEATURE_UNCLASSIFIED;
@@ -298,8 +868,6 @@ function _renderTimelineView(idea, cards, ideaId) {
   });
   groups.forEach(arr => arr.sort((a, b) => (b.shippedAt || 0) - (a.shippedAt || 0)));
 
-  // Section order: catalog order first (so the README's natural order shows),
-  // then any "Unclassified" or stragglers at the end.
   const catalogNames = featureCatalog.map(f => f.name);
   const orderedThemes = [];
   catalogNames.forEach(name => { if (groups.has(name)) orderedThemes.push([name, groups.get(name)]); });
@@ -309,27 +877,7 @@ function _renderTimelineView(idea, cards, ideaId) {
 
   const sectionsHtml = orderedThemes.map(([theme, cardsInGroup]) => {
     const color = _featureColorFor(theme);
-    const items = cardsInGroup.map(c => {
-      const meta    = c.commitMeta || {};
-      const date    = c.shippedAt ? new Date(c.shippedAt) : null;
-      const dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      const timeStr = date ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
-      const snippet = (c.text || '').split('\n')[0].slice(0, 200);
-      const hash    = meta.commitHash ? `<span class="vb-tl-card-hash">${escapeHtml(meta.commitHash)}</span>` : '';
-      const app     = meta.appName    ? `<span class="vb-tl-card-app">${escapeHtml(meta.appName)}</span>`    : '';
-
-      return `
-        <div class="vb-tl-card" data-card-id="${escapeAttr(c.id)}">
-          <div class="vb-tl-card-meta">
-            <span class="vb-tl-card-date">${escapeHtml(dateStr)}</span>
-            <span class="vb-tl-card-time">${escapeHtml(timeStr)}</span>
-            ${app}${hash}
-          </div>
-          <div class="vb-tl-card-text">${escapeHtml(snippet)}${(c.text || '').length > 200 ? '…' : ''}</div>
-        </div>
-      `;
-    }).join('');
-
+    const items = cardsInGroup.map(c => _renderTimelineCard(c, idea)).join('');
     return `
       <div class="vb-tl-section" style="border-left:3px solid ${color}">
         <div class="vb-tl-section-header">
@@ -342,21 +890,7 @@ function _renderTimelineView(idea, cards, ideaId) {
     `;
   }).join('');
 
-  return `
-    <div class="vibeboard-timeline">
-      ${banner}
-      <div class="vb-tl-stats">
-        <span class="vb-tl-stat"><strong>${shipped.length}</strong> shipped</span>
-        <span class="vb-tl-stat-sep">•</span>
-        <span class="vb-tl-stat"><strong>${themesUsed.size}</strong> features</span>
-        <span class="vb-tl-stat-sep">•</span>
-        <span class="vb-tl-stat"><strong>${shippedThisWeek}</strong> this week</span>
-      </div>
-      <div class="vb-tl-sections">
-        ${sectionsHtml}
-      </div>
-    </div>
-  `;
+  return `<div class="vb-tl-sections">${sectionsHtml}</div>`;
 }
 
 // ─── VibeBoard Search ─────────────────────────────────────────────────────────
@@ -373,19 +907,41 @@ function _applyVbSearchFilter() {
 
   function matches(card) {
     if (!q) return true;
-    const text = (card.text || '').toLowerCase() + ' ' + (card.draft || '').toLowerCase();
-    const meta = card.commitMeta || {};
+    const text  = (card.text || '').toLowerCase() + ' ' + (card.draft || '').toLowerCase();
+    const meta  = card.commitMeta || {};
+    const theme = (card.featureTheme || '').toLowerCase();
     return text.includes(q)
         || (meta.commitHash || '').toLowerCase().includes(q)
         || (meta.fullHash   || '').toLowerCase().includes(q)
-        || (meta.appName    || '').toLowerCase().includes(q);
+        || (meta.appName    || '').toLowerCase().includes(q)
+        || theme.includes(q);
   }
 
+  // Board view: kanban cards
   cards.forEach(card => {
     const el = document.getElementById(`vb-card-${card.id}`);
     if (el) el.style.display = matches(card) ? '' : 'none';
   });
 
+  // Timeline view: vb-tl-card[data-card-id]
+  document.querySelectorAll('.vb-tl-card[data-card-id]').forEach(el => {
+    const cardId = el.dataset.cardId;
+    const card   = cards.find(c => c.id === cardId);
+    el.style.display = (card && matches(card)) ? '' : 'none';
+  });
+
+  // Hide empty containers in the timeline
+  const isCardVisible = (el) => el.style.display !== 'none';
+  document.querySelectorAll('.vb-tl-day').forEach(day => {
+    const any = [...day.querySelectorAll('.vb-tl-card[data-card-id]')].some(isCardVisible);
+    day.style.display = any ? '' : 'none';
+  });
+  document.querySelectorAll('.vb-tl-section').forEach(sec => {
+    const any = [...sec.querySelectorAll('.vb-tl-card[data-card-id]')].some(isCardVisible);
+    sec.style.display = any ? '' : 'none';
+  });
+
+  // Column counts (board view only — Timeline doesn't have these elements)
   (APP.state.vibeBoard?.columns || []).forEach(col => {
     const colCards = cards.filter(c => c.columnId === col.id);
     const visible  = colCards.filter(matches).length;
@@ -1147,6 +1703,18 @@ function _refreshColumn(colId, ideaId) {
 // Must run AFTER innerHTML is set on a container, because HTML from card.draft
 // cannot be safely embedded in a template literal.
 function _hydrateCardContent(container, allCards) {
+  // Lazy-migrate any commit cards still on the old text-only format
+  const ideaId = _boardIdeaId();
+  const idea   = ideaId ? APP.state.ideas[ideaId] : null;
+  let mutated  = false;
+  allCards.forEach(card => {
+    if (!card.commitMeta) return;
+    const before = card.draft;
+    _ensureCommitCardDraft(card, idea);
+    if (card.draft !== before) mutated = true;
+  });
+  if (mutated) saveAppState();
+
   container.querySelectorAll('.vb-card-text[data-card-id]').forEach(el => {
     const card = allCards.find(c => c.id === el.dataset.cardId);
     if (!card) return;
@@ -1193,6 +1761,13 @@ function vbOpenCardModal(cardId) {
 
   // Ensure draft field exists
   if (!('draft' in card)) card.draft = '';
+
+  // Lazy-migrate old commit cards into the rich render (idempotent)
+  if (card.commitMeta) {
+    const before = card.draft;
+    _ensureCommitCardDraft(card, idea);
+    if (card.draft !== before) saveAppState();
+  }
 
   const cats     = APP.state.vibeBoard.promptCategories;
   const cat      = cats.find(c => c.id === card.categoryId);
@@ -2198,6 +2773,18 @@ function confirmImportCards() {
 
     const createdAt = card.timestamp ? new Date(card.timestamp).getTime() : Date.now();
     const idea      = APP.state.ideas[ideaId];
+    const commitMeta = {
+      appName:    card.appName,
+      fullHash:   card.fullHash,
+      commitHash: card.commitHash,
+      branch:     card.branch,
+      author:     card.author,
+      timestamp:  card.timestamp,
+      message:    card.message  || '',
+      body:       card.body     || '',
+      statLine:   card.statLine || '',
+      files:      Array.isArray(card.files) ? card.files : [],
+    };
     const vibeCard = {
       id:           generateId(),
       columnId:     colId,
@@ -2206,15 +2793,10 @@ function confirmImportCards() {
       createdAt,
       order:        colCards.length,
       shippedAt:    _isShippedCol(colId) ? createdAt : undefined,
-      commitFiles:  Array.isArray(card.files) ? card.files : [],
-      commitMeta: {
-        appName:    card.appName,
-        fullHash:   card.fullHash,
-        commitHash: card.commitHash,
-        branch:     card.branch,
-        author:     card.author,
-        timestamp:  card.timestamp,
-      },
+      commitFiles:  commitMeta.files,
+      commitMeta,
+      // Rich draft renders as the GitHub-style commit display in the modal/board
+      draft:        _buildCommitCardDraft(commitMeta, idea?.githubUrl),
     };
     // Classify against THIS idea's feature catalog (post-construction so the
     // classifier sees commitFiles/commitMeta on the card).

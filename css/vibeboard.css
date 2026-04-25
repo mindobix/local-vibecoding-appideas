@@ -109,16 +109,100 @@
 }
 .vb-timeline-empty-sub { font-size: 12px; line-height: 1.5; }
 
-.vb-tl-stats {
+.vb-tl-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 14px;
   padding: 10px 14px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+.vb-tl-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
   color: var(--text-2);
+}
+
+.vb-tl-subtabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.vb-tl-subtab {
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition), background var(--transition);
+}
+.vb-tl-subtab:hover { color: var(--text-2); }
+.vb-tl-subtab.active {
+  color: var(--text);
+  background: var(--surface-3);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+}
+
+/* Latest → Oldest sub-view */
+.vb-tl-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.vb-tl-day {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vb-tl-day-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  padding: 0 2px;
+}
+.vb-tl-day-count {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.vb-tl-day-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vb-tl-recent-theme {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 1px 8px;
+  letter-spacing: 0.01em;
 }
 .vb-tl-stat strong { color: var(--text); font-weight: 700; }
 .vb-tl-stat-sep { color: var(--text-3); }
@@ -174,10 +258,50 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+.vb-tl-card:hover { border-color: var(--border-3); }
+.vb-tl-card.expanded { background: var(--surface-2); }
+
+.vb-tl-card-summary {
+  cursor: pointer;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  user-select: none;
+}
+.vb-tl-card-summary:hover { background: rgba(255,255,255,0.02); }
+
+.vb-tl-card-toggle {
+  display: inline-block;
+  width: 12px;
+  color: var(--text-3);
+  font-size: 10px;
+  margin-right: 4px;
+  transition: color var(--transition);
+}
+.vb-tl-card.expanded .vb-tl-card-toggle { color: var(--text); }
+
+.vb-tl-card-subject { flex: 1; }
+.vb-tl-card-subject:empty::before {
+  content: '(no description)';
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.vb-tl-card-expanded {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.vb-tl-card-rich {
+  font-size: 13px;
+  color: var(--text);
 }
 .vb-tl-card-meta {
   display: flex;
@@ -1386,3 +1510,108 @@
 .import-match-hint--warn {
   color: var(--warning);
 }
+
+/* ─── Commit Card Rich Render ──────────────────────────────────────────────── */
+.vb-commit-render {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  padding: 4px 2px;
+}
+.vb-commit-render p { margin: 0; }
+.vb-commit-render a { color: #60a5fa; text-decoration: none; }
+.vb-commit-render a:hover { text-decoration: underline; }
+
+.vb-commit-header {
+  font-size: 12px;
+  color: var(--text-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
+}
+.vb-commit-header strong { color: var(--text); font-weight: 700; }
+.vb-commit-rel { color: var(--text-2); }
+.vb-commit-abs { color: var(--text-3); font-size: 11px; }
+
+.vb-commit-coauthor {
+  font-size: 12px;
+  color: var(--text-2);
+  padding-left: 4px;
+}
+.vb-commit-coauthor strong { color: #60a5fa; font-weight: 700; }
+.vb-commit-coauthor em     { color: var(--text-3); font-style: normal; font-size: 11px; }
+.vb-commit-coauthor-icon   { color: var(--text-3); margin-right: 2px; }
+
+.vb-commit-subject {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.vb-commit-bullets {
+  margin: 2px 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vb-commit-bullets li {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.vb-commit-bullets li::marker { color: var(--text-3); }
+
+.vb-commit-trailer {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.vb-commit-trailer .vb-commit-email { color: #60a5fa; }
+
+.vb-commit-stat {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.vb-commit-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.vb-commit-footer .vb-commit-sep { color: var(--text-3); }
+
+.vb-commit-hash,
+.vb-commit-hash-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none !important;
+}
+.vb-commit-hash-link:hover { color: var(--text); border-color: var(--border-3); }
+
+.vb-commit-gh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #60a5fa;
+  font-weight: 500;
+}
+.vb-commit-gh-link svg { flex-shrink: 0; }

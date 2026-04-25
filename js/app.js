@@ -12,6 +12,7 @@ const APP = {
     sidebarSearch:   '',
     vbSearch:        '',
     vbView:          'board', // 'board' | 'timeline'
+    vbTimelineSub:   'recent', // 'recent' | 'categorized'
   }
 };
 
@@ -28,6 +29,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar();
   renderEditorEmpty();
   initChipRotation();
+  // Hydrate any GitHub-fetched feature catalogs cached on previous runs
+  if (typeof ensureGhFeatureCacheLoaded === 'function') ensureGhFeatureCacheLoaded();
 });
 
 // ─── Chip Rotation ────────────────────────────────────────────────────────
