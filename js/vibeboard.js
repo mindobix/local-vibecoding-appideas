@@ -24,6 +24,82 @@ const VIBE_DEFAULT_CATEGORIES = [
   { id: 'vbcat-11', name: 'AI Libraries',   color: '#8b5cf6' },
 ];
 
+// ─── Feature Themes (per-idea, computed from each repo's README) ─────────────
+// Source: window.APP_FEATURES (from data/app-features.js, built by
+// tools/build-app-features.js on each install-hooks.sh run).
+const FEATURE_UNCLASSIFIED = 'Unclassified';
+
+const _FEATURE_COLOR_PALETTE = [
+  '#10b981', '#06b6d4', '#3b82f6', '#a78bfa', '#f97316',
+  '#ec4899', '#8b5cf6', '#fbbf24', '#22c55e', '#ef4444',
+  '#6366f1', '#84cc16', '#64748b', '#f59e0b', '#14b8a6',
+];
+
+function _featureColorFor(name) {
+  if (!name || name === FEATURE_UNCLASSIFIED) return '#888';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  return _FEATURE_COLOR_PALETTE[Math.abs(hash) % _FEATURE_COLOR_PALETTE.length];
+}
+
+// Extract the repo basename from a GitHub URL — e.g.
+//   https://github.com/mindobix/local-trading-journal      → local-trading-journal
+//   git@github.com:mindobix/local-trading-journal.git      → local-trading-journal
+function _repoNameFromUrl(url) {
+  if (!url) return '';
+  const m = String(url).trim().match(/[:/]([A-Za-z0-9._-]+?)(?:\.git)?\/?$/);
+  return m ? m[1] : '';
+}
+
+// Returns the feature catalog (array of {name, keywords}) for an idea,
+// drawn from the global APP_FEATURES via the idea's githubUrl.
+function _getIdeaFeatures(idea) {
+  const repo = _repoNameFromUrl(idea?.githubUrl);
+  if (!repo) return [];
+  const apps = (typeof window !== 'undefined' && window.APP_FEATURES?.apps) || {};
+  return apps[repo]?.features || [];
+}
+
+function _classifyCardText(card) {
+  const meta = card.commitMeta || {};
+  return [card.text, meta.appName, meta.commitHash, (card.commitFiles || []).join(' ')].filter(Boolean).join('\n');
+}
+
+// Score the card against this idea's feature catalog by keyword hits.
+// Specificity tie-breaker: longer matched keyword wins.
+function _classifyCardForIdea(card, idea) {
+  const features = _getIdeaFeatures(idea);
+  if (features.length === 0) return FEATURE_UNCLASSIFIED;
+
+  const haystack = _classifyCardText(card).toLowerCase();
+  let best = { name: FEATURE_UNCLASSIFIED, score: 0, length: 0 };
+  for (const f of features) {
+    let score = 0;
+    let matchedLen = 0;
+    for (const kw of (f.keywords || [])) {
+      if (haystack.includes(kw)) { score++; matchedLen += kw.length; }
+    }
+    if (score > best.score || (score === best.score && score > 0 && matchedLen > best.length)) {
+      best = { name: f.name, score, length: matchedLen };
+    }
+  }
+  return best.name;
+}
+
+// Re-seed featureTheme on every shipped card for an idea (called when
+// Timeline opens — so README updates flow through automatically).
+function _reseedFeatureThemes(idea) {
+  if (!idea) return;
+  const cards = idea.vibeCards || [];
+  let mutated = false;
+  cards.forEach(c => {
+    if (!_isShippedCol(c.columnId)) return;
+    const next = _classifyCardForIdea(c, idea);
+    if (c.featureTheme !== next) { c.featureTheme = next; mutated = true; }
+  });
+  if (mutated) saveAppState();
+}
+
 const VIBE_COLOR_PALETTE = [
   '#3b82f6', '#22c55e', '#a78bfa', '#f59e0b',
   '#ec4899', '#f97316', '#06b6d4', '#84cc16',
@@ -78,6 +154,20 @@ function _hasShippedCard(ideaId) {
   return APP.state.ideas[ideaId]?.vibeCards?.some(c => c.columnId === shippedCol.id) ?? false;
 }
 
+function _isShippedCol(colId) {
+  const col = APP.state.vibeBoard?.columns?.find(c => c.id === colId);
+  return !!col && /shipped/i.test(col.name);
+}
+
+// Shipped column orders by drop time (oldest first). Other columns use `order`.
+function _sortColCards(cards, colId) {
+  if (_isShippedCol(colId)) {
+    return cards.slice().sort((a, b) =>
+      (a.shippedAt || a.createdAt || 0) - (b.shippedAt || b.createdAt || 0));
+  }
+  return cards.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
 // ─── Render VibeBoard ─────────────────────────────────────────────────────────
 function renderVibeBoard(ideaId) {
   ensureVibeBoardState();
@@ -89,6 +179,7 @@ function renderVibeBoard(ideaId) {
   const { columns, promptCategories } = APP.state.vibeBoard;
   const cards = idea.vibeCards;
 
+  const view  = APP.ui.vbView === 'timeline' ? 'timeline' : 'board';
   const panel = document.getElementById('editor-panel');
   panel.innerHTML = `
     <div class="vibeboard" id="vibeboard" data-idea="${escapeAttr(ideaId)}">
@@ -103,14 +194,27 @@ function renderVibeBoard(ideaId) {
         <div class="vibeboard-title">
           VibeBoard &mdash; <span class="vibeboard-title-idea">${escapeHtml(idea.title || 'Untitled')}</span>
         </div>
+        <div class="vibeboard-view-tabs">
+          <button class="vibeboard-view-tab${view === 'board' ? ' active' : ''}" onclick="setVbView('board')">Board</button>
+          <button class="vibeboard-view-tab${view === 'timeline' ? ' active' : ''}" onclick="setVbView('timeline')">Timeline</button>
+        </div>
+        <div class="vibeboard-search-wrap">
+          <svg class="vibeboard-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input type="text" id="vb-search" class="vibeboard-search-input"
+                 placeholder="Search cards…"
+                 value="${escapeAttr(APP.ui.vbSearch || '')}"
+                 oninput="onVbSearchInput(this.value)">
+        </div>
+        ${view === 'board' ? `
         <button class="vibeboard-cats-btn" id="vb-cats-toggle" onclick="toggleVibeCatPanel()">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
           </svg>
           Prompt Categories
-        </button>
+        </button>` : ''}
       </div>
 
+      ${view === 'board' ? `
       <div class="vibeboard-cats-panel" id="vb-cats-panel">
         ${_renderCatPanel(promptCategories)}
       </div>
@@ -118,15 +222,176 @@ function renderVibeBoard(ideaId) {
       <div class="vibeboard-cols" id="vb-cols">
         ${columns.map(col => _renderColumn(col, cards, promptCategories, ideaId)).join('')}
       </div>
+      ` : _renderTimelineView(idea, cards, ideaId)}
 
     </div>
   `;
 
-  // Hydrate all card text areas with their draft/text content
-  const boardEl = document.getElementById('vibeboard');
-  if (boardEl) _hydrateCardContent(boardEl, cards);
+  // Hydrate all card text areas with their draft/text content (board only)
+  if (view === 'board') {
+    const boardEl = document.getElementById('vibeboard');
+    if (boardEl) _hydrateCardContent(boardEl, cards);
+    _applyVbSearchFilter();
+  }
 
   document.addEventListener('click', _vbOutsideClick, { capture: true });
+}
+
+function setVbView(view) {
+  APP.ui.vbView = view === 'timeline' ? 'timeline' : 'board';
+  const ideaId = _boardIdeaId();
+  if (ideaId) renderVibeBoard(ideaId);
+}
+
+// ─── Timeline View ────────────────────────────────────────────────────────────
+function _renderTimelineView(idea, cards, ideaId) {
+  const shippedCol = APP.state.vibeBoard?.columns?.find(c => /shipped/i.test(c.name));
+  if (!shippedCol) {
+    return `<div class="vb-timeline-empty">No Shipped column found in this board.</div>`;
+  }
+
+  // Backfill shippedAt + re-seed every shipped card's featureTheme against the
+  // current per-idea catalog (so README updates reflow without manual action).
+  const shipped0 = (cards || []).filter(c => c.columnId === shippedCol.id);
+  shipped0.forEach(c => { if (!c.shippedAt) c.shippedAt = c.createdAt || Date.now(); });
+  _reseedFeatureThemes(idea);
+  const shipped = (idea.vibeCards || []).filter(c => c.columnId === shippedCol.id);
+
+  // Idea isn't linked to a repo (or repo has no taxonomy yet)
+  const repoName       = _repoNameFromUrl(idea.githubUrl);
+  const featureCatalog = _getIdeaFeatures(idea);
+  const lacksCatalog   = featureCatalog.length === 0;
+
+  let banner = '';
+  if (!repoName) {
+    banner = `<div class="vb-tl-banner">
+      Set this idea's <strong>GitHub URL</strong> to enable feature classification.
+      Cards will stay <em>Unclassified</em> until then.
+    </div>`;
+  } else if (lacksCatalog) {
+    banner = `<div class="vb-tl-banner">
+      No feature taxonomy found for <code>${escapeHtml(repoName)}</code>.
+      Run <code>bash tools/install-hooks.sh</code> to scan its README + project structure.
+    </div>`;
+  }
+
+  if (shipped.length === 0) {
+    return `<div class="vibeboard-timeline">${banner}
+      <div class="vb-timeline-empty">
+        <div class="vb-timeline-empty-title">Nothing shipped yet</div>
+        <div class="vb-timeline-empty-sub">Drop cards into the Shipped column on the Board tab to see them here, grouped by feature.</div>
+      </div>
+    </div>`;
+  }
+
+  // Stats
+  const oneWeekAgo      = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const shippedThisWeek = shipped.filter(c => (c.shippedAt || 0) >= oneWeekAgo).length;
+  const themesUsed      = new Set(shipped.map(c => c.featureTheme || FEATURE_UNCLASSIFIED));
+
+  // Group by feature, sort cards within each newest-first
+  const groups = new Map();
+  shipped.forEach(c => {
+    const theme = c.featureTheme || FEATURE_UNCLASSIFIED;
+    if (!groups.has(theme)) groups.set(theme, []);
+    groups.get(theme).push(c);
+  });
+  groups.forEach(arr => arr.sort((a, b) => (b.shippedAt || 0) - (a.shippedAt || 0)));
+
+  // Section order: catalog order first (so the README's natural order shows),
+  // then any "Unclassified" or stragglers at the end.
+  const catalogNames = featureCatalog.map(f => f.name);
+  const orderedThemes = [];
+  catalogNames.forEach(name => { if (groups.has(name)) orderedThemes.push([name, groups.get(name)]); });
+  [...groups.entries()]
+    .filter(([name]) => !catalogNames.includes(name))
+    .forEach(entry => orderedThemes.push(entry));
+
+  const sectionsHtml = orderedThemes.map(([theme, cardsInGroup]) => {
+    const color = _featureColorFor(theme);
+    const items = cardsInGroup.map(c => {
+      const meta    = c.commitMeta || {};
+      const date    = c.shippedAt ? new Date(c.shippedAt) : null;
+      const dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const timeStr = date ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+      const snippet = (c.text || '').split('\n')[0].slice(0, 200);
+      const hash    = meta.commitHash ? `<span class="vb-tl-card-hash">${escapeHtml(meta.commitHash)}</span>` : '';
+      const app     = meta.appName    ? `<span class="vb-tl-card-app">${escapeHtml(meta.appName)}</span>`    : '';
+
+      return `
+        <div class="vb-tl-card" data-card-id="${escapeAttr(c.id)}">
+          <div class="vb-tl-card-meta">
+            <span class="vb-tl-card-date">${escapeHtml(dateStr)}</span>
+            <span class="vb-tl-card-time">${escapeHtml(timeStr)}</span>
+            ${app}${hash}
+          </div>
+          <div class="vb-tl-card-text">${escapeHtml(snippet)}${(c.text || '').length > 200 ? '…' : ''}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="vb-tl-section" style="border-left:3px solid ${color}">
+        <div class="vb-tl-section-header">
+          <span class="vb-tl-section-dot" style="background:${color}"></span>
+          <span class="vb-tl-section-name">${escapeHtml(theme)}</span>
+          <span class="vb-tl-section-count">${cardsInGroup.length}</span>
+        </div>
+        <div class="vb-tl-section-cards">${items}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="vibeboard-timeline">
+      ${banner}
+      <div class="vb-tl-stats">
+        <span class="vb-tl-stat"><strong>${shipped.length}</strong> shipped</span>
+        <span class="vb-tl-stat-sep">•</span>
+        <span class="vb-tl-stat"><strong>${themesUsed.size}</strong> features</span>
+        <span class="vb-tl-stat-sep">•</span>
+        <span class="vb-tl-stat"><strong>${shippedThisWeek}</strong> this week</span>
+      </div>
+      <div class="vb-tl-sections">
+        ${sectionsHtml}
+      </div>
+    </div>
+  `;
+}
+
+// ─── VibeBoard Search ─────────────────────────────────────────────────────────
+function onVbSearchInput(value) {
+  APP.ui.vbSearch = value;
+  _applyVbSearchFilter();
+}
+
+function _applyVbSearchFilter() {
+  const ideaId = _boardIdeaId();
+  if (!ideaId) return;
+  const cards = APP.state.ideas[ideaId]?.vibeCards || [];
+  const q     = (APP.ui.vbSearch || '').trim().toLowerCase();
+
+  function matches(card) {
+    if (!q) return true;
+    const text = (card.text || '').toLowerCase() + ' ' + (card.draft || '').toLowerCase();
+    const meta = card.commitMeta || {};
+    return text.includes(q)
+        || (meta.commitHash || '').toLowerCase().includes(q)
+        || (meta.fullHash   || '').toLowerCase().includes(q)
+        || (meta.appName    || '').toLowerCase().includes(q);
+  }
+
+  cards.forEach(card => {
+    const el = document.getElementById(`vb-card-${card.id}`);
+    if (el) el.style.display = matches(card) ? '' : 'none';
+  });
+
+  (APP.state.vibeBoard?.columns || []).forEach(col => {
+    const colCards = cards.filter(c => c.columnId === col.id);
+    const visible  = colCards.filter(matches).length;
+    const countEl  = document.getElementById(`vb-count-${col.id}`);
+    if (countEl) countEl.textContent = q ? `${visible}/${colCards.length}` : `${colCards.length}`;
+  });
 }
 
 // ─── Back to Editor ────────────────────────────────────────────────────────────
@@ -209,9 +474,7 @@ function _colAddBtn(colId, ideaId) {
 }
 
 function _renderColumn(col, cards, cats, ideaId) {
-  const colCards = cards
-    .filter(c => c.columnId === col.id)
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  const colCards = _sortColCards(cards.filter(c => c.columnId === col.id), col.id);
 
   const cardsHtml = colCards.length > 0
     ? colCards.map(card => _renderCard(card, cats, col.id)).join('')
@@ -513,6 +776,10 @@ function vbMoveCard(cardId, newColId) {
   const oldColId  = card.columnId;
   card.columnId   = newColId;
   card.order      = idea.vibeCards.filter(c => c.columnId === newColId).length - 1;
+  if (_isShippedCol(newColId)) {
+    card.shippedAt   = Date.now();
+    card.featureTheme = _classifyCardForIdea(card, idea);
+  }
   saveAppState();
 
   document.querySelectorAll('.vb-move-picker').forEach(p => p.remove());
@@ -743,6 +1010,10 @@ function vbCardDrop(event, targetCardId, colId) {
 
   const oldColId    = dragCard.columnId;
   dragCard.columnId = colId;
+  if (oldColId !== colId && _isShippedCol(colId)) {
+    dragCard.shippedAt   = Date.now();
+    dragCard.featureTheme = _classifyCardForIdea(dragCard, idea);
+  }
 
   // Sorted cards in target column excluding the drag card
   const colCards = allCards
@@ -850,9 +1121,7 @@ function _refreshColumn(colId, ideaId) {
 
   const idea    = APP.state.ideas[ideaId];
   const cats    = APP.state.vibeBoard.promptCategories;
-  const colCards = (idea?.vibeCards || [])
-    .filter(c => c.columnId === colId)
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  const colCards = _sortColCards((idea?.vibeCards || []).filter(c => c.columnId === colId), colId);
 
   const emptyHtml = `<div class="vb-col-empty">
        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.25">
@@ -870,6 +1139,8 @@ function _refreshColumn(colId, ideaId) {
 
   // Hydrate card text areas (draft HTML can't live in template literals)
   _hydrateCardContent(cardsEl, idea?.vibeCards || []);
+
+  _applyVbSearchFilter();
 }
 
 // ─── Private: Hydrate card text with draft/text content ──────────────────────
@@ -1793,6 +2064,16 @@ function _guessIdeaId(appName, ideaIds, ideas) {
   return bestId;  // '' if no word matched any idea title
 }
 
+// When the user picks an idea on row 1, propagate it to any subsequent
+// rows whose selector is still blank (untouched by the user).
+function _propagateFirstRowIdea(ideaId) {
+  if (!ideaId) return;
+  document.querySelectorAll('.import-idea-sel').forEach(sel => {
+    if (sel.dataset.idx === '0') return;
+    if (!sel.value) sel.value = ideaId;
+  });
+}
+
 function _renderImportModal() {
   ensureVibeBoardState();
   const ideas   = APP.state.ideas;
@@ -1800,19 +2081,32 @@ function _renderImportModal() {
   const columns = APP.state.vibeBoard.columns;
   const cats      = APP.state.vibeBoard.promptCategories;
 
-  // Default column: find "Vibe Coding" or fallback to first
-  const defaultColId = columns.find(c => /vibe.?cod/i.test(c.name))?.id || columns[0]?.id || '';
+  // Default column: Shipped (commit cards represent shipped code)
+  const defaultColId = columns.find(c => /shipped/i.test(c.name))?.id || columns[0]?.id || '';
+
+  // Default category: Web UI
+  const webUiCatId = cats.find(c => /web ui/i.test(c.name))?.id || '';
 
   const colOptions = columns
     .map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultColId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
     .join('');
+
+  // First-row idea: any subsequent row that fails to auto-match falls back to this.
+  const firstRowIdeaId = _importPending.length
+    ? _guessIdeaId(_importPending[0].appName || '', ideaIds, ideas)
+    : '';
 
   const cardsHtml = _importPending.map((card, idx) => {
     const files    = Array.isArray(card.files) ? card.files : [];
     const fileList = files.slice(0, 5).join(', ') + (files.length > 5 ? ` +${files.length - 5} more` : '');
 
     // Auto-match app name → idea title (best-effort fuzzy)
-    const matchedId = _guessIdeaId(card.appName || '', ideaIds, ideas);
+    let matchedId = _guessIdeaId(card.appName || '', ideaIds, ideas);
+    let inheritedFromFirst = false;
+    if (!matchedId && idx > 0 && firstRowIdeaId) {
+      matchedId = firstRowIdeaId;
+      inheritedFromFirst = true;
+    }
 
     const ideaOptions = ideaIds.length
       ? '<option value="">— Select idea —</option>' +
@@ -1822,13 +2116,14 @@ function _renderImportModal() {
       : '<option value="">— No ideas yet —</option>';
 
     const matchLabel = matchedId
-      ? `<span class="import-match-hint">auto-matched</span>`
+      ? (inheritedFromFirst
+          ? `<span class="import-match-hint">copied from row 1</span>`
+          : `<span class="import-match-hint">auto-matched</span>`)
       : `<span class="import-match-hint import-match-hint--warn">no match — please select</span>`;
 
-    // Pre-select AI Init Commit if the matched idea has no shipped cards yet.
-    const defaultCatId = (!matchedId || !_hasShippedCard(matchedId)) ? 'vbcat-0' : '';
+    // Default category: Web UI for commit cards
     const catOptions = '<option value="">— No category —</option>' +
-      cats.map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultCatId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      cats.map(c => `<option value="${escapeAttr(c.id)}"${c.id === webUiCatId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
 
     return `
 <div class="import-card-row" data-idx="${idx}">
@@ -1847,7 +2142,7 @@ function _renderImportModal() {
   </div>
   <div class="import-card-selectors">
     <label class="import-sel-label">Idea ${matchLabel}</label>
-    <select class="import-sel import-idea-sel" data-idx="${idx}">${ideaOptions}</select>
+    <select class="import-sel import-idea-sel" data-idx="${idx}"${idx === 0 ? ' onchange="_propagateFirstRowIdea(this.value)"' : ''}>${ideaOptions}</select>
     <label class="import-sel-label">Column</label>
     <select class="import-sel import-col-sel" data-idx="${idx}">${colOptions}</select>
     <label class="import-sel-label">Category</label>
@@ -1901,13 +2196,17 @@ function confirmImportCards() {
     ].filter(Boolean);
     const text = textParts.join('').trim();
 
+    const createdAt = card.timestamp ? new Date(card.timestamp).getTime() : Date.now();
+    const idea      = APP.state.ideas[ideaId];
     const vibeCard = {
-      id:         generateId(),
-      columnId:   colId,
+      id:           generateId(),
+      columnId:     colId,
       text,
-      categoryId: catId,
-      createdAt:  card.timestamp ? new Date(card.timestamp).getTime() : Date.now(),
-      order:      colCards.length,
+      categoryId:   catId,
+      createdAt,
+      order:        colCards.length,
+      shippedAt:    _isShippedCol(colId) ? createdAt : undefined,
+      commitFiles:  Array.isArray(card.files) ? card.files : [],
       commitMeta: {
         appName:    card.appName,
         fullHash:   card.fullHash,
@@ -1917,6 +2216,9 @@ function confirmImportCards() {
         timestamp:  card.timestamp,
       },
     };
+    // Classify against THIS idea's feature catalog (post-construction so the
+    // classifier sees commitFiles/commitMeta on the card).
+    vibeCard.featureTheme = _classifyCardForIdea(vibeCard, idea);
 
     cards.push(vibeCard);
     affectedIdeas.add(ideaId);

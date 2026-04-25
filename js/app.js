@@ -9,6 +9,9 @@ const APP = {
     openCategories:  new Set(),
     isDirty:         false,
     activeTab:       'all',  // 'all' | 'vibecoding'
+    sidebarSearch:   '',
+    vbSearch:        '',
+    vbView:          'board', // 'board' | 'timeline'
   }
 };
 

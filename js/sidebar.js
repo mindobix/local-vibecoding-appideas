@@ -35,6 +35,12 @@ function getVibeCodingIdeaIds() {
   return vcIds;
 }
 
+// ─── Sidebar Search ───────────────────────────────────────────────────────────
+function onSidebarSearchInput(value) {
+  APP.ui.sidebarSearch = value;
+  renderSidebar();
+}
+
 // ─── Render Sidebar ───────────────────────────────────────────────────────────
 function renderSidebar() {
   const tree = document.getElementById('sidebar-tree');
@@ -46,20 +52,36 @@ function renderSidebar() {
   if (activeTabEl) activeTabEl.classList.add('active');
 
   const filteredIds = APP.ui.activeTab === 'vibecoding' ? getVibeCodingIdeaIds() : null;
+  const q           = (APP.ui.sidebarSearch || '').trim().toLowerCase();
 
   let anyVisible = false;
   APP.state.categories.forEach(cat => {
-    const ideas = getIdeasInCategory(cat);
-    const filtered = filteredIds ? ideas.filter(([id]) => filteredIds.has(id)) : ideas;
-    if (filteredIds !== null && filtered.length === 0) return;
+    let ideas = getIdeasInCategory(cat);
+    if (filteredIds) ideas = ideas.filter(([id]) => filteredIds.has(id));
+
+    let toShow = ideas;
+    if (q) {
+      const catMatches = cat.toLowerCase().includes(q);
+      if (!catMatches) {
+        toShow = ideas.filter(([_id, idea]) => (idea.title || '').toLowerCase().includes(q));
+        if (toShow.length === 0) return;
+      }
+      APP.ui.openCategories.add(cat); // auto-expand on search hit
+    } else if (filteredIds !== null && ideas.length === 0) {
+      return;
+    }
+
     anyVisible = true;
-    tree.appendChild(buildCategoryEl(cat, filteredIds ? filtered : null));
+    const passFiltered = (q || filteredIds) ? toShow : null;
+    tree.appendChild(buildCategoryEl(cat, passFiltered));
   });
 
-  if (filteredIds !== null && !anyVisible) {
+  if ((q || filteredIds !== null) && !anyVisible) {
     const empty = document.createElement('div');
     empty.className = 'sidebar-tab-empty';
-    empty.textContent = 'No ideas have Vibe Coding cards yet';
+    empty.textContent = q
+      ? `No matches for "${APP.ui.sidebarSearch}"`
+      : 'No ideas have Vibe Coding cards yet';
     tree.appendChild(empty);
   }
 

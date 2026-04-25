@@ -61,3 +61,10 @@ echo "Each commit in a vibecode app (including this one) will now append a card 
 echo "  $VIBECODE_DIR/local-vibecoding-appideas/data/incoming/pending.json"
 echo ""
 echo "Open the VibeCoding App Ideas app and click  ⬇ Import Commits  to review them."
+echo ""
+echo "Building per-app feature taxonomy from each repo's README + structure…"
+if command -v node >/dev/null 2>&1; then
+  node "$TOOLS_DIR/build-app-features.js" || echo "  ⚠  build-app-features.js failed — skipping"
+else
+  echo "  ⚠  node not found — skipping feature taxonomy build"
+fi

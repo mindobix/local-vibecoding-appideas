@@ -13,12 +13,43 @@
 
 .sidebar-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+
+.sidebar-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-search-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.sidebar-search-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px 5px 26px;
+  outline: none;
+  transition: border-color var(--transition), background var(--transition);
+}
+.sidebar-search-input:focus {
+  border-color: var(--border-3);
+  background: var(--surface);
+}
+.sidebar-search-input::placeholder { color: var(--text-3); }
 
 .sidebar-title {
   font-size: 10px;
