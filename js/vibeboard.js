@@ -10,7 +10,6 @@ const VIBE_DEFAULT_COLUMNS = [
 ];
 
 const VIBE_DEFAULT_CATEGORIES = [
-  { id: 'vbcat-0',  name: 'AI Init Commit', color: '#10b981' },
   { id: 'vbcat-1',  name: 'Brainstorming', color: '#f59e0b' },
   { id: 'vbcat-2',  name: 'UI/UX',         color: '#a78bfa' },
   { id: 'vbcat-3',  name: 'Web UI',         color: '#3b82f6' },
@@ -452,6 +451,136 @@ function ensureVibeBoardState() {
     }
   });
   if (added) saveAppState();
+}
+
+// ─── Prompt-Category Classifier ─────────────────────────────────────────────
+// Keyword bag per built-in prompt category. Used by the import modal and
+// the one-time migration to assign each card to a meaningful prompt category
+// based on its commit text + body.
+const _PROMPT_CAT_KEYWORDS = {
+  'Brainstorming':  ['brainstorm', 'concept', 'spec', 'rfc', 'proposal', 'design doc'],
+  'UI/UX':          ['ux', 'usability', 'accessibility', 'a11y', 'wireframe', 'prototype', 'mockup'],
+  'Web UI':         ['html', 'css', 'tailwind', 'react', 'vue', 'svelte', 'next.js', 'browser', 'frontend', 'dom'],
+  'Swift UI':       ['swift', 'swiftui', 'ios', 'xcode', 'iphone', 'ipad', 'macos'],
+  'Kotlin UI':      ['kotlin', 'android', 'jetpack', 'compose', 'gradle'],
+  'API':            ['api', 'endpoint', 'rest', 'graphql', 'http', 'fetch', 'webhook', 'route handler'],
+  'Database':       ['database', ' sql ', 'postgres', 'mysql', 'sqlite', 'mongo', 'redis', 'indexeddb', 'localstorage', 'persist', 'migration', 'schema', 'storage'],
+  'Libraries':      ['library', 'libraries', 'package', 'dependency', 'npm install', 'pip install', 'spm', 'cocoapod'],
+  'AI Models':      ['gpt-', 'claude-', 'llm', 'embedding', 'transformer', 'llama', 'tokenizer'],
+  'AI Agents':      ['agent', 'tool use', 'function call', 'orchestrat', 'workflow', 'mcp '],
+  'AI Libraries':   ['langchain', 'llamaindex', 'anthropic sdk', 'openai sdk', 'instructor'],
+};
+
+function _classifyPromptCategory(text, cats) {
+  if (!text || !Array.isArray(cats) || cats.length === 0) return null;
+  const t = (' ' + text.toLowerCase() + ' ');
+  let best = { id: null, score: 0, length: 0 };
+  for (const cat of cats) {
+    const kws = _PROMPT_CAT_KEYWORDS[cat.name]
+      || cat.name.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    let score = 0;
+    let matchedLen = 0;
+    for (const kw of kws) {
+      if (t.includes(kw)) { score++; matchedLen += kw.length; }
+    }
+    if (score > best.score || (score === best.score && score > 0 && matchedLen > best.length)) {
+      best = { id: cat.id, score, length: matchedLen };
+    }
+  }
+  return best.id;
+}
+
+function _classifyCardPromptCategory(card, cats) {
+  const meta = card.commitMeta || {};
+  const text = [
+    meta.message,
+    meta.body,
+    card.text,
+    (meta.files || card.commitFiles || []).join(' '),
+  ].filter(Boolean).join('\n');
+  return _classifyPromptCategory(text, cats);
+}
+
+// ─── One-time Migration: Strip Init/Import categories + Bulk Reclassify ─────
+// Runs once. Idempotent thereafter via the migration flag. Bump the flag
+// version (V4, V5…) any time we want every user's data re-cleaned.
+const _STALE_CATEGORY_NAMES = /^(ai\s*init\s*commit|import\s*commit\s*cards?|import\s*commits?)$/i;
+const _MIGRATION_FLAG = '_bulkReclassifyV4';
+
+function runAiInitCommitMigration() {
+  if (!APP?.state) return;
+  if (APP.state[_MIGRATION_FLAG]) return;
+
+  // 0. Make sure the VibeBoard state exists before we try to read/clean
+  //    prompt categories (otherwise cards classify against an empty bag).
+  if (typeof ensureVibeBoardState === 'function') ensureVibeBoardState();
+
+  let removedSidebar = 0;
+  let removedPrompt  = 0;
+
+  // 1. Sidebar app categories: drop any name matching the stale pattern.
+  const appCats = APP.state.categories || [];
+  const removed = appCats.filter(n => _STALE_CATEGORY_NAMES.test(n));
+  if (removed.length) {
+    removedSidebar = removed.length;
+    APP.state.categories = appCats.filter(n => !_STALE_CATEGORY_NAMES.test(n));
+    if (!APP.state.categories.length) APP.state.categories.push('AI Apps');
+    const fallback = APP.state.categories[0];
+    Object.values(APP.state.ideas || {}).forEach(idea => {
+      if (removed.includes(idea.category)) idea.category = fallback;
+    });
+  }
+
+  // 2. VibeBoard prompt categories: drop vbcat-0 unconditionally + any name
+  //    matching the stale pattern (covers user-renamed/hand-added entries).
+  if (APP.state.vibeBoard) {
+    const promptCats = APP.state.vibeBoard.promptCategories || [];
+    const before = promptCats.length;
+    APP.state.vibeBoard.promptCategories = promptCats.filter(c =>
+      c.id !== 'vbcat-0' && !_STALE_CATEGORY_NAMES.test(c.name || '')
+    );
+    removedPrompt = before - APP.state.vibeBoard.promptCategories.length;
+  }
+  const cats = APP.state.vibeBoard?.promptCategories || [];
+
+  // 3. Bulk re-classify EVERY card across EVERY idea against the surviving
+  //    prompt categories.
+  let reclassified = 0;
+  let totalCards   = 0;
+  Object.values(APP.state.ideas || {}).forEach(idea => {
+    (idea.vibeCards || []).forEach(card => {
+      totalCards++;
+      const next = _classifyCardPromptCategory(card, cats);
+      if (card.categoryId !== next) {
+        card.categoryId = next;
+        reclassified++;
+      }
+    });
+  });
+
+  APP.state[_MIGRATION_FLAG] = true;
+  // Drop older migration flags so state stays lean.
+  delete APP.state._bulkReclassifyV3;
+  delete APP.state._bulkReclassifyV2;
+  delete APP.state._aiInitCommitRemovedV1;
+  saveAppState();
+
+  console.log(`[VibeCoding] Migration ${_MIGRATION_FLAG}: removed ${removedSidebar} sidebar cat${removedSidebar === 1 ? '' : 's'}, ${removedPrompt} prompt cat${removedPrompt === 1 ? '' : 's'}; reclassified ${reclassified}/${totalCards} cards.`);
+
+  // Always notify the user the cleanup ran. Defer slightly so the toast
+  // element is in the DOM and not preempted by an immediate re-render.
+  setTimeout(() => {
+    if (typeof showToast !== 'function') return;
+    if (reclassified === 0 && removedSidebar === 0 && removedPrompt === 0) {
+      showToast(`Cleanup ran — already in sync (${totalCards} card${totalCards === 1 ? '' : 's'} checked)`);
+    } else {
+      const parts = [];
+      if (removedSidebar) parts.push(`${removedSidebar} sidebar cat${removedSidebar === 1 ? '' : 's'}`);
+      if (removedPrompt)  parts.push(`${removedPrompt} prompt cat${removedPrompt === 1 ? '' : 's'}`);
+      if (reclassified)   parts.push(`${reclassified} card${reclassified === 1 ? '' : 's'}`);
+      showToast(`Cleanup: cleared ${parts.join(', ')}`);
+    }
+  }, 400);
 }
 
 function ensureIdeaVibeCards(ideaId) {
@@ -1197,7 +1326,7 @@ function vbAddCard(colId, ideaId) {
     id:         generateId(),
     columnId:   colId,
     text:       '',
-    categoryId: _hasShippedCard(ideaId) ? null : 'vbcat-0',
+    categoryId: null,
     createdAt:  Date.now(),
     order:      colCards.length,
   };
@@ -2659,9 +2788,6 @@ function _renderImportModal() {
   // Default column: Shipped (commit cards represent shipped code)
   const defaultColId = columns.find(c => /shipped/i.test(c.name))?.id || columns[0]?.id || '';
 
-  // Default category: Web UI
-  const webUiCatId = cats.find(c => /web ui/i.test(c.name))?.id || '';
-
   const colOptions = columns
     .map(c => `<option value="${escapeAttr(c.id)}"${c.id === defaultColId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
     .join('');
@@ -2696,9 +2822,14 @@ function _renderImportModal() {
           : `<span class="import-match-hint">auto-matched</span>`)
       : `<span class="import-match-hint import-match-hint--warn">no match — please select</span>`;
 
-    // Default category: Web UI for commit cards
+    // Auto-classify each commit's prompt category against its content
+    const haystack = [
+      card.message, card.body,
+      (Array.isArray(card.files) ? card.files.join(' ') : ''),
+    ].filter(Boolean).join('\n');
+    const autoCatId = _classifyPromptCategory(haystack, cats);
     const catOptions = '<option value="">— No category —</option>' +
-      cats.map(c => `<option value="${escapeAttr(c.id)}"${c.id === webUiCatId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      cats.map(c => `<option value="${escapeAttr(c.id)}"${c.id === autoCatId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
 
     return `
 <div class="import-card-row" data-idx="${idx}">

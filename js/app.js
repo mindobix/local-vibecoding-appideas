@@ -20,6 +20,11 @@ const APP = {
 document.addEventListener('DOMContentLoaded', async () => {
   APP.state = await loadAppState();
   APP.ui.activeTab = localStorage.getItem('vibecoding_active_tab') || 'all';
+
+  // One-time migration: remove the AI Init Commit category and re-classify
+  // any cards that were defaulting to it. Idempotent after first run.
+  if (typeof runAiInitCommitMigration === 'function') runAiInitCommitMigration();
+
   APP.state.categories.forEach(c => APP.ui.openCategories.add(c));
 
   document.getElementById('restore-input').addEventListener('change', restoreData);
